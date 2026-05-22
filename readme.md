@@ -8,6 +8,8 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.5.2](https://githu
 
 简体中文完整说明见 [README.zh-cn.md](./README.zh-cn.md)（含 `proxy_configs.json` 配置章节，示例均使用占位符）。
 
+**Why this extension?** See [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md) (English) · [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md) (简体中文) — advantages, comparisons, and who it’s for.
+
 ## What we added
 
 - One Copilot model entry per proxy in `proxy_configs.json`

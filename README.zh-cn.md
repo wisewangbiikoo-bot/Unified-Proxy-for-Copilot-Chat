@@ -6,6 +6,8 @@
 
 > 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.5.2** 官方文档与源码说明。
 
+**本插件有什么优势？** 见 [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md)（定位、与同类扩展对比、适用场景）；英文版 [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md)。
+
 ## 与原版的关系
 
 | 项目 | DeepSeek V4 v0.5.2（原版） | Unified Proxy（本插件） |
