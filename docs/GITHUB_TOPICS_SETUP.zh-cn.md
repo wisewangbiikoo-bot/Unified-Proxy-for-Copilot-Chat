@@ -83,6 +83,20 @@ https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/settings/ac
 
 ---
 
+## Actions 报错 `Resource not accessible by integration` / workflow 失败
+
+说明 **`GITHUB_TOKEN` 没有写 Topics 的权限**（仓库默认常为只读）。任选其一：
+
+1. **账号级**（推荐先试）：https://github.com/settings/actions → **Workflow permissions** → **Read and write permissions** → Save  
+2. **仓库级**：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/settings/actions → 拉到最底 → 同上  
+3. **改用手动 Topics**（不依赖 Actions，见上文方法一）
+
+修好权限后，打开 [Sync repository topics](https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml) → **Run workflow**。
+
+当前工作流已改为使用 `gh api` 设置 Topics；仅当修改 `.github/repository-topics.txt` 时会自动运行（改 `sync-topics.yml` 本身不会触发）。
+
+---
+
 ## 仍然只有 “Actions permissions” 没有 Workflow permissions？
 
 部分界面把两项合在一起：
