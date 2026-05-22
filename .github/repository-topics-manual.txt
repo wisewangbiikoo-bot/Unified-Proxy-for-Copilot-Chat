@@ -1,0 +1,4 @@
+# Paste this ONE line into GitHub About → Topics (space-separated, <=200 chars total).
+# Length: 169 characters. Do NOT use commas.
+
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config deepseek copilot vscode proxy ai

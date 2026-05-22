@@ -1,46 +1,36 @@
 # GitHub 仓库 Topics（标签）怎么加
 
-GitHub 在 **About → ⚙ → Topics** 里的提示是：
+GitHub **About → Topics** 输入框规则：
 
-> **Topics (separate with spaces)** — 用**空格**分隔，每个标签 ≤ 50 个字符。
+| 规则 | 说明 |
+|------|------|
+| **空格分隔** | 提示 *Topics (separate with spaces)*，用空格分开多个词，**不要用逗号** |
+| **整行 ≤ 约 200 字符** | 所有标签加空格算在一起，**不能超过约 200 字**（否则保存失败） |
+| **每个词 ≤ 50 字符** | 单个标签名长度上限 |
+| **最多 20 个词** | 标签个数上限 |
+| **字符** | 仅小写字母、数字、连字符 `-` |
 
-也就是说：**一个输入框、空格分开多个词**，不是逗号，也不是一行一个回车。
+> API / Actions 可设置最多 20 个标签（见 `repository-topics.txt`）；**网页里手动填写**受「一行 200 字符」限制，请用下面短行。
 
 ---
 
-## 正确填写方式（复制下面整行）
+## 手动填写：复制这一行（169 字符，≤200）
 
-1. 打开：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat  
-2. 右侧 **About** → **⚙**  
-3. 在 **Topics** 输入框里 **整段粘贴下面这一行**（词与词之间是**空格**，没有逗号）：
+1. https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat  
+2. **About** → **⚙** → **Topics**  
+3. 粘贴（**仅空格**，无逗号）：
 
 ```
-vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config language-model bring-your-own-key local-proxy typescript copilot deepseek vscode proxy chat ai
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config deepseek copilot vscode proxy ai
 ```
 
-4. 点击 **Save changes**
+4. **Save changes**
 
-共 **20 个** 标签（GitHub 上限），每个词 ≤ 50 字符。
-
----
-
-## 为什么会报错？
-
-| 错误写法 | 原因 |
-|----------|------|
-| `vscode-extension, github-copilot` | 用了**逗号**，应改为**空格** |
-| `openai compatible` | 标签名里不能有**空格**（应用 `openai-compatible`） |
-| `proxy_configs` | 不能有**下划线** `_` |
-| `Unified-Proxy` | 必须**全小写** |
-| 超过 20 个词 | GitHub 最多 20 个 Topics |
-
-报错 *must start with a lowercase letter…* 时，多半是某个「词」里带了逗号、空格或非法字符，不是整句提示的字面意思。
+共 **16 个** 核心标签，已控制在 200 字符以内。
 
 ---
 
-## 想少加几个（最短示例）
-
-只加核心 5 个时，可粘贴：
+## 更短（约 124 字符，5 个核心词）
 
 ```
 vscode-extension github-copilot copilot-chat openai-compatible unified-proxy
@@ -48,18 +38,26 @@ vscode-extension github-copilot copilot-chat openai-compatible unified-proxy
 
 ---
 
-## 方法二：Actions 自动同步（可选）
+## 为什么会报错？
 
-列表文件：[`.github/repository-topics.txt`](../.github/repository-topics.txt)（每行一个词，供 Actions 用；**手动填写请用上面空格那一行**）。
+| 情况 | 原因 |
+|------|------|
+| 一长串带 **逗号** | 应用空格，不是逗号 |
+| **整行超过 ~200 字符** | 此前 20 词长行约 **231 字符**，会失败 |
+| 标签名含 **空格/下划线/大写** | 只允许 `a-z` `0-9` `-` |
 
-需 **Workflow permissions = Read and write**，否则用手动方式即可。
+报错 *must start with a lowercase letter…* 常为**整行不合法**（含逗号、超长等），不一定是第一个词不对。
 
-- 账号设置：https://github.com/settings/actions  
-- 运行工作流：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml → **Run workflow**
+---
+
+## Actions 同步（可选，可设满 20 个）
+
+网页输入框有 200 字限制；[`.github/repository-topics.txt`](../.github/repository-topics.txt) 每行一个词，**Run workflow** 后可通过 API 写入最多 20 个（需 Workflow **Read and write** 权限）。
+
+https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml
 
 ---
 
 ## 验证
 
-保存后 About 下方出现灰色标签，或访问：  
 https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/topics

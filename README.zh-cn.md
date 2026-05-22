@@ -8,7 +8,7 @@
 
 **本插件有什么优势？** 见 [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md)（定位、与同类扩展对比、适用场景）；英文版 [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md)。
 
-**如何搜到本仓库？** 在 **About → ⚙ → Topics** 输入框粘贴空格分隔的一行标签（见 [docs/GITHUB_TOPICS_SETUP.zh-cn.md](./docs/GITHUB_TOPICS_SETUP.zh-cn.md)）。
+**如何搜到本仓库？** 在 **About → Topics** 粘贴空格分隔的一行（**整行 ≤约200 字符**，见 [docs/GITHUB_TOPICS_SETUP.zh-cn.md](./docs/GITHUB_TOPICS_SETUP.zh-cn.md) 或 [repository-topics-manual.txt](./.github/repository-topics-manual.txt)）。
 
 ## 与原版的关系
 
