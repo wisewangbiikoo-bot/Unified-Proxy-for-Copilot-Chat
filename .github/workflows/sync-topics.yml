@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: read
-  administration: write
+  metadata: write
 
 jobs:
   topics:
