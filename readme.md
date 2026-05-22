@@ -10,7 +10,7 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.5.2](https://githu
 
 **Why this extension?** See [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md) (English) · [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md) (简体中文) — advantages, comparisons, and who it’s for.
 
-**Find this repo:** GitHub topics include `vscode-extension`, `github-copilot`, `copilot-chat`, `openai-compatible`, `byok`, `proxy`, `deepseek-v4`, `lan`, `self-hosted` — edit [`.github/repository-topics.txt`](./.github/repository-topics.txt) to add more (synced automatically via Actions).
+**Find this repo:** In **About → Topics**, paste space-separated tags (see [docs/GITHUB_TOPICS_SETUP.zh-cn.md](./docs/GITHUB_TOPICS_SETUP.zh-cn.md)). List file [`.github/repository-topics.txt`](./.github/repository-topics.txt) is for Actions sync.
 
 ## What we added
 

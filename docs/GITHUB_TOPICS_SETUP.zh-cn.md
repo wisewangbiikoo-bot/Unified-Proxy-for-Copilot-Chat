@@ -1,79 +1,65 @@
 # GitHub 仓库 Topics（标签）怎么加
 
+GitHub 在 **About → ⚙ → Topics** 里的提示是：
+
+> **Topics (separate with spaces)** — 用**空格**分隔，每个标签 ≤ 50 个字符。
+
+也就是说：**一个输入框、空格分开多个词**，不是逗号，也不是一行一个回车。
+
 ---
 
-## 报错：must start with a lowercase letter or number…
+## 正确填写方式（复制下面整行）
 
-GitHub 在保存失败时**总是同一句英文**，常见真实原因如下（不一定是“没以小写字母开头”）：
-
-| 原因 | 处理 |
-|------|------|
-| 一次粘贴了带 **逗号/空格** 的一整行 | 删掉该标签，**一个词 + Enter** 单独添加 |
-| 标签里混入了 **大写、下划线 `_`、中文、反引号 `` ` ``** | 只保留 `a-z` `0-9` `-` |
-| 已有 **超过 20 个** 或某个 **空标签** | 先 **清空全部 Topics** 保存，再重新加 |
-| 标签以 **`-` 开头/结尾**（如 `-proxy`） | 去掉首尾 `-` |
-
-### 推荐：先清空再逐个添加（最稳）
-
-1. About → ⚙ → Topics  
-2. **删掉已有全部标签**（每个标签上的 ×）  
-3. **Save changes**（允许 0 个标签）  
-4. 只先加 **1 个** 测试：`vscode-extension` → Enter → Save  
-   - 若成功，再继续加下面的词  
-   - 若仍失败，检查是否登录的是仓库所有者账号  
-
-5. 每次只输入 **一个** 词（全小写），按 **Enter**，**不要**粘贴逗号分隔的一行  
-
-### 建议添加的 20 个（与仓库 `repository-topics.txt` 一致）
+1. 打开：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat  
+2. 右侧 **About** → **⚙**  
+3. 在 **Topics** 输入框里 **整段粘贴下面这一行**（词与词之间是**空格**，没有逗号）：
 
 ```
-vscode-extension
-github-copilot
-copilot-chat
-openai-compatible
-unified-proxy
-deepseek-v4
-self-hosted
-agent-mode
-tool-calling
-json-config
-language-model
-bring-your-own-key
-local-proxy
-typescript
-copilot
-deepseek
-vscode
-proxy
-chat
-ai
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config language-model bring-your-own-key local-proxy typescript copilot deepseek vscode proxy chat ai
 ```
 
-**不要输入：** `proxy_configs`、`Unified-Proxy`、`openai compatible`、`vscode-extension, copilot`
+4. 点击 **Save changes**
+
+共 **20 个** 标签（GitHub 上限），每个词 ≤ 50 字符。
 
 ---
 
-## 方法一：手动添加（推荐）
+## 为什么会报错？
 
-1. https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat  
-2. 右侧 **About** → **⚙** → **Topics**  
-3. 按上一节「先清空再逐个添加」操作  
-4. **Save changes**
+| 错误写法 | 原因 |
+|----------|------|
+| `vscode-extension, github-copilot` | 用了**逗号**，应改为**空格** |
+| `openai compatible` | 标签名里不能有**空格**（应用 `openai-compatible`） |
+| `proxy_configs` | 不能有**下划线** `_` |
+| `Unified-Proxy` | 必须**全小写** |
+| 超过 20 个词 | GitHub 最多 20 个 Topics |
+
+报错 *must start with a lowercase letter…* 时，多半是某个「词」里带了逗号、空格或非法字符，不是整句提示的字面意思。
 
 ---
 
-## 方法二：Actions 自动同步
+## 想少加几个（最短示例）
 
-需账号或仓库 **Workflow permissions = Read and write**。  
-失败时请用方法一。
+只加核心 5 个时，可粘贴：
 
-- 账号：https://github.com/settings/actions  
-- 仓库：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/settings/actions（页面**最底部**）  
-- 手动运行：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml → **Run workflow**
+```
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy
+```
+
+---
+
+## 方法二：Actions 自动同步（可选）
+
+列表文件：[`.github/repository-topics.txt`](../.github/repository-topics.txt)（每行一个词，供 Actions 用；**手动填写请用上面空格那一行**）。
+
+需 **Workflow permissions = Read and write**，否则用手动方式即可。
+
+- 账号设置：https://github.com/settings/actions  
+- 运行工作流：https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml → **Run workflow**
 
 ---
 
 ## 验证
 
-About 下方出现灰色标签，或打开：  
+保存后 About 下方出现灰色标签，或访问：  
 https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/topics
