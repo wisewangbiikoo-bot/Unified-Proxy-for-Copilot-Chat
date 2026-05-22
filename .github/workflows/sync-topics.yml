@@ -8,13 +8,12 @@ on:
       - .github/workflows/sync-topics.yml
   workflow_dispatch:
 
-permissions:
-  contents: read
-  metadata: write
-
 jobs:
   topics:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      metadata: write
     steps:
       - uses: actions/checkout@v4
 
