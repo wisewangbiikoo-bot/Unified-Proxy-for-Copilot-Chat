@@ -8,6 +8,8 @@
 
 **本插件有什么优势？** 见 [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md)（定位、与同类扩展对比、适用场景）；英文版 [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md)。
 
+**如何搜到本仓库？** GitHub 仓库主题（Topics）包括：`vscode-extension`、`github-copilot`、`copilot-chat`、`openai-compatible`、`byok`、`proxy`、`deepseek-v4`、`lan`、`self-hosted` 等。可在 [`.github/repository-topics.txt`](./.github/repository-topics.txt) 增删标签，推送到 `main` 后由 Actions 自动同步到 GitHub。
+
 ## 与原版的关系
 
 | 项目 | DeepSeek V4 v0.5.2（原版） | Unified Proxy（本插件） |

@@ -1,0 +1,38 @@
+name: Sync repository topics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/repository-topics.txt
+      - .github/workflows/sync-topics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  administration: write
+
+jobs:
+  topics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply GitHub repository topics
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('.github/repository-topics.txt', 'utf8');
+            const names = raw
+              .split('\n')
+              .map((s) => s.trim().toLowerCase())
+              .filter((s) => s.length > 0 && s.length <= 50)
+              .filter((s) => /^[a-z0-9][a-z0-9-]*$/.test(s));
+            const unique = [...new Set(names)].slice(0, 20);
+            core.info(`Setting ${unique.length} topics: ${unique.join(', ')}`);
+            await github.rest.repos.replaceAllTopics({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              names: unique,
+            });
