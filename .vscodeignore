@@ -1,0 +1,16 @@
+.vscode/**
+.git/**
+.github/**
+*.vsix
+node_modules/**
+proxy_configs.json
+proxy_configs.local.json
+proxy_configs_for_vscode.json
+request-dumps/**
+deepseek-dumps/**
+.env
+.env.*
+**/*.map
+**/*.log
+.DS_Store
+Thumbs.db

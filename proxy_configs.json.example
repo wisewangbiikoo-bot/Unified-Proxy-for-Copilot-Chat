@@ -1,0 +1,37 @@
+{
+  "proxies": {
+    "gemini": {
+      "name": "Gemini",
+      "description": "Gemini 2.5 Flash Lite (example)",
+      "base_url": "http://proxy.example.com:4150/v1",
+      "api_key": "YOUR_GEMINI_API_KEY",
+      "model_id": "gemini-2.5-flash-lite",
+      "supports_images": 1,
+      "context_window_size": "128K",
+      "max_output_tokens": 8192,
+      "temperature": 0.5,
+      "thinking_mode": "标准"
+    },
+    "deepseek": {
+      "name": "DeepSeek",
+      "description": "DeepSeek V4 Flash (example)",
+      "base_url": "http://proxy.example.com:4154/v1",
+      "api_key": "YOUR_DEEPSEEK_API_KEY",
+      "model_id": "deepseek-v4-flash",
+      "supports_images": 0,
+      "context_window_size": 128000,
+      "temperature": 0.5,
+      "thinking_mode": "深度"
+    },
+    "claude": {
+      "name": "Claude",
+      "description": "Claude via OpenAI-compatible proxy (example)",
+      "base_url": "http://proxy.example.com:8080/v1",
+      "api_key": "YOUR_DUMMY_OR_GATEWAY_KEY",
+      "model_id": "claude-haiku-4.5",
+      "supports_images": 0,
+      "context_window_size": "128K",
+      "thinking_mode": "停用"
+    }
+  }
+}

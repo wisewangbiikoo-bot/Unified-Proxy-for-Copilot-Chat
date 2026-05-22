@@ -1,0 +1,169 @@
+{
+	"name": "unified-proxy-copilot",
+	"displayName": "Unified Proxy for Copilot Chat",
+	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.5.2.",
+	"icon": "resources/icon.png",
+	"version": "1.0.3",
+	"publisher": "biikoo",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat"
+	},
+	"engines": {
+		"vscode": "^1.116.0",
+		"node": ">=24"
+	},
+	"extensionKind": [
+		"workspace"
+	],
+	"categories": [
+		"AI",
+		"Chat",
+		"Programming Languages"
+	],
+	"keywords": [
+		"deepseek",
+		"deepseek v4",
+		"deepseek-v4",
+		"unified proxy",
+		"copilot",
+		"github copilot",
+		"copilot chat",
+		"vision",
+		"byok",
+		"language model",
+		"thinking",
+		"reasoning",
+		"ai",
+		"chat",
+		"proxy"
+	],
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"enabledApiProposals": [],
+	"main": "./out/extension.js",
+	"contributes": {
+		"languageModelChatProviders": [
+			{
+				"vendor": "unified-proxy",
+				"displayName": "Unified Proxy"
+			}
+		],
+		"commands": [
+			{
+				"command": "unified-proxy-copilot.setApiKey",
+				"title": "Unified Proxy: Set API Key"
+			},
+			{
+				"command": "unified-proxy-copilot.clearApiKey",
+				"title": "Unified Proxy: Clear API Key"
+			},
+			{
+				"command": "unified-proxy-copilot.openSettings",
+				"title": "Unified Proxy: Open Settings"
+			},
+			{
+				"command": "unified-proxy-copilot.showLogs",
+				"title": "Unified Proxy: Show Logs"
+			},
+			{
+				"command": "unified-proxy-copilot.reloadConfig",
+				"title": "Unified Proxy: Reload Config"
+			}
+		],
+
+		"walkthroughs": [
+			{
+				"id": "deepseekGettingStarted",
+				"title": "%deepseek-copilot.walkthrough.title%",
+				"description": "%deepseek-copilot.walkthrough.description%",
+				"steps": [
+					{
+						"id": "configureProxy",
+						"title": "%deepseek-copilot.walkthrough.configureProxy.title%",
+						"description": "%deepseek-copilot.walkthrough.configureProxy.description%",
+						"media": {
+							"markdown": "resources/walkthrough/configure-proxy-config.md"
+						},
+						"completionEvents": [
+							"onCommand:unified-proxy-copilot.reloadConfig"
+						]
+					},
+					{
+						"id": "showModels",
+						"title": "%deepseek-copilot.walkthrough.showModels.title%",
+						"description": "%deepseek-copilot.walkthrough.showModels.description%",
+						"media": {
+							"markdown": "resources/walkthrough/show-models.md"
+						}
+					},
+					{
+						"id": "advancedSettings",
+						"title": "%deepseek-copilot.walkthrough.advancedSettings.title%",
+						"description": "%deepseek-copilot.walkthrough.advancedSettings.description%",
+						"media": {
+							"markdown": "resources/walkthrough/advanced-settings.md"
+						}
+					}
+				]
+			}
+		],
+		"configuration": {
+			"title": "Unified Proxy Copilot",
+			"properties": {
+				"unified-proxy-copilot.proxyConfigPath": {
+					"type": "string",
+					"default": "",
+					"description": "Path to proxy_configs.json file. Defaults to ~/.vscode/proxy_configs.json if not specified. Used to dynamically load available AI backends."
+				},
+				"unified-proxy-copilot.debugMode": {
+					"type": "string",
+					"default": "minimal",
+					"enum": [
+						"minimal",
+						"metadata",
+						"verbose"
+					],
+					"enumItemLabels": [
+						"Minimal",
+						"Metadata",
+						"Verbose"
+					],
+					"markdownEnumDescriptions": [
+						"Token usage only. No diagnostic logs or dumps.",
+						"Privacy-safe metadata. Safe to share publicly.",
+						"⚠️ Contains sensitive prompt content. For local debugging only."
+					],
+					"markdownDescription": "Controls what diagnostic information is logged."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true, maxRetries: process.platform === 'win32' ? 10 : 0 })\"",
+		"vscode:prepublish": "echo Skipping prepublish",
+		"compile": "npm run clean && tsc -p ./",
+		"watch": "npm run clean && tsc -watch -p ./",
+		"lint": "oxlint",
+		"format": "oxfmt --write src/",
+		"format:check": "oxfmt --check src/",
+		"package": "vsce package -o ./",
+		"login": "vsce login Vizards"
+	},
+	"devDependencies": {
+		"@types/node": "^25.6.0",
+		"@types/vscode": "^1.116.0",
+		"@vscode/vsce": "^3.9.1",
+		"ovsx": "0.10.12",
+		"oxfmt": "^0.47.0",
+		"oxlint": "^1.62.0",
+		"typescript": "^6.0.3"
+	},
+	"__metadata": {
+		"installedTimestamp": 1779147667913,
+		"targetPlatform": "undefined",
+		"size": 372755
+	}
+}
