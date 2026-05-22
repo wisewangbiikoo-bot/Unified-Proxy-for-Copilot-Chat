@@ -1,6 +1,5 @@
 vscode-extension
 vscode
-visual-studio-code
 github-copilot
 copilot-chat
 copilot

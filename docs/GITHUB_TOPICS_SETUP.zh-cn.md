@@ -11,33 +11,48 @@
 
 2. 右侧 **About**（关于）区域，点击 **⚙**（齿轮）。
 
-3. 找到 **Topics**（主题），在输入框里**逐个输入**下面标签（输入一个回车确认一个，最多 20 个）：
+3. 找到 **Topics**（主题），**每次只输入一个词，按 Enter 添加**（不要整行粘贴带逗号的列表）。
 
-```
-vscode-extension
-vscode
-visual-studio-code
-github-copilot
-copilot-chat
-copilot
-language-model
-byok
-openai-compatible
-proxy
-unified-proxy
-deepseek
-deepseek-v4
-ai
-chat
-agent-mode
-tool-calling
-lan
-self-hosted
-json-config
-typescript
-```
+   **规则（报错多半是不符合下面某条）：**
 
-4. 点击 **Save changes**（保存更改）。
+   - 全小写英文：`a-z`、`0-9`、中间可有 `-`
+   - **不能**有空格、逗号、下划线 `_`、中文
+   - **不能**以 `-` 开头或结尾（如 `-proxy`）
+   - 每个标签 ≤ 50 字符
+   - **最多 20 个**（本仓库列表正好 20 个）
+
+4. 按顺序添加下面 **20 个**（输完一个按 Enter，再输下一个）：
+
+| # | 输入内容 |
+|---|----------|
+| 1 | `vscode-extension` |
+| 2 | `vscode` |
+| 3 | `github-copilot` |
+| 4 | `copilot-chat` |
+| 5 | `copilot` |
+| 6 | `language-model` |
+| 7 | `byok` |
+| 8 | `openai-compatible` |
+| 9 | `proxy` |
+| 10 | `unified-proxy` |
+| 11 | `deepseek` |
+| 12 | `deepseek-v4` |
+| 13 | `ai` |
+| 14 | `chat` |
+| 15 | `agent-mode` |
+| 16 | `tool-calling` |
+| 17 | `lan` |
+| 18 | `self-hosted` |
+| 19 | `json-config` |
+| 20 | `typescript` |
+
+5. 确认已添加 **20 个**（不要第 21 个），再点 **Save changes**。
+
+**常见误操作：**
+
+- 整段粘贴 `vscode-extension, github-copilot, copilot`（含逗号）→ 当作一个非法标签  
+- 使用 `proxy_configs`、`Unified-Proxy`（下划线或大写）  
+- 超过 **20 个** 标签（旧列表有 21 个会保存失败）
 
 保存后，别人在 GitHub 搜索 `copilot-chat`、`vscode-extension`、`openai-compatible` 等更容易找到本仓库。
 

@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r line || [[ -n "$line" ]]; do
             topic=$(echo "$line" | tr '[:upper:]' '[:lower:]' | xargs)
             [[ -z "$topic" ]] && continue
-            [[ "$topic" =~ ^[a-z0-9][a-z0-9-]*$ ]] || {
+            [[ "$topic" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || {
               echo "Skip invalid topic: $topic"
               continue
             }
