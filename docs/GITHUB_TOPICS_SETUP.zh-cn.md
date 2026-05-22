@@ -1,60 +1,68 @@
 # GitHub 仓库 Topics（标签）怎么加
 
-GitHub **About → Topics** 输入框规则：
+## 重要：网页输入框很短
 
-| 规则 | 说明 |
-|------|------|
-| **空格分隔** | 提示 *Topics (separate with spaces)*，用空格分开多个词，**不要用逗号** |
-| **整行 ≤ 约 200 字符** | 所有标签加空格算在一起，**不能超过约 200 字**（否则保存失败） |
-| **每个词 ≤ 50 字符** | 单个标签名长度上限 |
-| **最多 20 个词** | 标签个数上限 |
-| **字符** | 仅小写字母、数字、连字符 `-` |
+About 里提示 **Topics (separate with spaces)**（用**空格**分开）。
 
-> API / Actions 可设置最多 20 个标签（见 `repository-topics.txt`）；**网页里手动填写**受「一行 200 字符」限制，请用下面短行。
+很多账号里这一栏 **整行一共只能约 50 个字符**（所有词 + 空格加起来），**不是**每个标签 50 字，也**不是** 200 字。  
+所以一长串 20 个词（一百多字）会报：
+
+> Repository topics must start with a lowercase letter…
 
 ---
 
-## 手动填写：复制这一行（169 字符，≤200）
+## 请先试这一行（39 字符，≤50）
 
-1. https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat  
-2. **About** → **⚙** → **Topics**  
-3. 粘贴（**仅空格**，无逗号）：
+复制到 **About → ⚙ → Topics**，不要逗号，不要换行：
 
 ```
-vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config deepseek copilot vscode proxy ai
+vscode-extension github-copilot copilot
 ```
 
-4. **Save changes**
-
-共 **16 个** 核心标签，已控制在 200 字符以内。
+点 **Save changes**。  
+若成功，说明上限是 **整行约 50 字**；不必再塞更多词。
 
 ---
 
-## 更短（约 124 字符，5 个核心词）
+## 若可以稍长（约 76～97 字符）
+
+有的界面放宽到约 **100 字**，可试：
+
+**76 字符（5 个词）：**
 
 ```
 vscode-extension github-copilot copilot-chat openai-compatible unified-proxy
 ```
 
+**97 字符（6 个词）：**
+
+```
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4
+```
+
+保存前在记事本里看一下**总长度**；超过你界面允许的长度就会失败。
+
 ---
 
-## 为什么会报错？
+## 规则
 
-| 情况 | 原因 |
+| 项目 | 说明 |
 |------|------|
-| 一长串带 **逗号** | 应用空格，不是逗号 |
-| **整行超过 ~200 字符** | 此前 20 词长行约 **231 字符**，会失败 |
-| 标签名含 **空格/下划线/大写** | 只允许 `a-z` `0-9` `-` |
-
-报错 *must start with a lowercase letter…* 常为**整行不合法**（含逗号、超长等），不一定是第一个词不对。
+| 分隔 | **空格**，不要逗号 |
+| 整行长度 | 以你界面为准，常见 **≤50** 或 **≤100** |
+| 每个词 | 小写 `a-z` `0-9` `-`，单个词 ≤50 字符 |
+| 个数 | 最多 20 个词（但受整行长度限制，网页里往往只能 2～6 个） |
 
 ---
 
-## Actions 同步（可选，可设满 20 个）
+## 想要更多标签？
 
-网页输入框有 200 字限制；[`.github/repository-topics.txt`](../.github/repository-topics.txt) 每行一个词，**Run workflow** 后可通过 API 写入最多 20 个（需 Workflow **Read and write** 权限）。
+网页输入框放不下时，可依赖 **Actions** 写入最多 20 个（不受「一行 50 字」限制）：
 
-https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml
+1. 账号 https://github.com/settings/actions → **Read and write permissions**
+2. 运行 https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml → **Run workflow**
+
+列表见 [`.github/repository-topics.txt`](../.github/repository-topics.txt)。
 
 ---
 

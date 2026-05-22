@@ -1,4 +1,15 @@
-# Paste this ONE line into GitHub About → Topics (space-separated, <=200 chars total).
-# Length: 169 characters. Do NOT use commas.
+# GitHub About → Topics: ONE line, SPACE-separated (NO commas).
+#
+# UI limit is often ~50 characters TOTAL for the whole line (not per tag).
+# Each tag alone may be up to 50 chars; the input box is much shorter.
+#
+# --- Pick ONE line below (length shown) ---
 
-vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4 self-hosted agent-mode tool-calling json-config deepseek copilot vscode proxy ai
+# 39 chars (safe if limit is 50):
+vscode-extension github-copilot copilot
+
+# 76 chars (if your UI allows ~100):
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy
+
+# 97 chars (if your UI allows ~100):
+vscode-extension github-copilot copilot-chat openai-compatible unified-proxy deepseek-v4
