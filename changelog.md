@@ -2,6 +2,12 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.0.4] — 2026-05-23
+
+### Fixed
+
+* **Critical:** Extension failed to activate (`path is not defined` in `no_proxy.js`), so Copilot showed `[LM] No provider registered for vendor unified-proxy` and fell back to GitHub Copilot models. Restored missing `path` / `os` imports.
+
 ## [1.0.3] — 2026-05-20
 
 ### Removed

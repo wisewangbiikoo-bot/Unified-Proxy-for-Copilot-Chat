@@ -4,6 +4,8 @@ exports.applyNoProxyBypass = applyNoProxyBypass;
 exports.collectNoProxyHosts = collectNoProxyHosts;
 exports.getDirectConnectEnv = getDirectConnectEnv;
 const fs = require("fs");
+const path = require("path");
+const os = require("os");
 const proxy_config_loader_1 = require("./proxy_config_loader");
 const PROXY_ENV_KEYS = [
     "HTTP_PROXY",
