@@ -2,6 +2,12 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.0.5] — 2026-06-02
+
+### Fixed
+
+* **Extension activation crash** — `no_proxy.js` was missing `const os = require("os")` and `const path = require("path")` imports in the `mergeVscodeNoProxyHosts()` function. Caused `ReferenceError: path is not defined` during startup on clean installs.
+
 ## [1.0.4] — 2026-05-23
 
 ### Fixed
