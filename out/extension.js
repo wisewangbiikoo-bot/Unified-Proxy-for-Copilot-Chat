@@ -13,7 +13,38 @@ const logger_1 = require("./logger");
 const provider_1 = require("./provider");
 const dump_1 = require("./provider/dump");
 const no_proxy_1 = require("./no_proxy");
+const fs = require("fs");
 let activeProvider;
+let configWatchPath;
+function reloadModelsFromConfig(notify = false) {
+    (0, no_proxy_1.applyNoProxyBypass)();
+    const consts = require("./consts");
+    const proxy_config_loader_1 = require("./proxy_config_loader");
+    const configPath = proxy_config_loader_1.getProxyConfigPath();
+    consts.MODELS.length = 0;
+    consts.MODELS.push(...proxy_config_loader_1.loadModelsFromConfig());
+    activeProvider?.refreshModelPicker();
+    const ids = consts.MODELS.map((m) => m.id).join(", ");
+    logger_1.logger.info(`Loaded ${consts.MODELS.length} models from ${configPath}: ${ids}`);
+    if (notify) {
+        void vscode_1.default.window.showInformationMessage(`Reloaded ${consts.MODELS.length} models from config`);
+    }
+}
+function watchProxyConfigFile(context) {
+    const proxy_config_loader_1 = require("./proxy_config_loader");
+    const configPath = proxy_config_loader_1.getProxyConfigPath();
+    if (!fs.existsSync(configPath)) {
+        return;
+    }
+    configWatchPath = configPath;
+    let reloadTimer;
+    const scheduleReload = () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => reloadModelsFromConfig(false), 500);
+    };
+    fs.watchFile(configPath, { interval: 1000 }, scheduleReload);
+    context.subscriptions.push({ dispose: () => fs.unwatchFile(configPath) });
+}
 async function activate(context) {
     (0, no_proxy_1.applyNoProxyBypass)();
     try {
@@ -34,13 +65,7 @@ async function activate(context) {
         }
     }));
     context.subscriptions.push(vscode_1.default.commands.registerCommand('unified-proxy-copilot.showLogs', () => logger_1.logger.show()), vscode_1.default.commands.registerCommand('unified-proxy-copilot.openSettings', () => vscode_1.default.commands.executeCommand('workbench.action.openSettings', 'unified-proxy-copilot')), vscode_1.default.commands.registerCommand('unified-proxy-copilot.reloadConfig', () => {
-        (0, no_proxy_1.applyNoProxyBypass)();
-        const consts_1 = require("./consts");
-        const proxy_config_loader_1 = require("./proxy_config_loader");
-        consts_1.MODELS.length = 0;
-        consts_1.MODELS.push(...(0, proxy_config_loader_1.loadModelsFromConfig)());
-        activeProvider?.refreshModelPicker();
-        vscode_1.default.window.showInformationMessage(`Reloaded ${consts_1.MODELS.length} models from config`);
+        reloadModelsFromConfig(true);
     }));
     try {
         const provider = new provider_1.DeepSeekChatProvider(context);
@@ -65,7 +90,8 @@ async function activate(context) {
         catch {
             logger_1.logger.warn('Copilot Chat activation unavailable; model picker refresh may be delayed');
         }
-        provider.refreshModelPicker();
+        reloadModelsFromConfig(false);
+        watchProxyConfigFile(context);
         void showWelcomeIfNeeded(context, provider).catch((error) => {
             logger_1.logger.warn((0, i18n_1.t)('extension.welcomeFailed'), error);
         });

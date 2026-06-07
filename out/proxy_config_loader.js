@@ -44,7 +44,7 @@ function buildModelFromProxy(key, proxy) {
         maxInputTokens: options.contextWindowTokens,
         maxOutputTokens: maxOutputForUi,
         capabilities: {
-            toolCalling: 128,
+            toolCalling: options.supportsTools ? 128 : 0,
             imageInput: options.supportsImages,
             thinking: true,
         },

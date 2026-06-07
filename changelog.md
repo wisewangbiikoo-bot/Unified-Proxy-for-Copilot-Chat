@@ -2,6 +2,19 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.0.6] — 2026-06-07
+
+### Added
+
+* **Gemma 4 channel-token cleanup** — strip `<|channel>thought` / `<|channel|>` leaks from streamed `content` and `reasoning_content` when the upstream LM Studio reasoning parser is unset or incomplete.
+* **Auto-reload on config change** — watch `proxy_configs.json` and refresh the model picker when the file is saved (debounced).
+
+### Fixed
+
+* **Markdown layout collapsed to plain text** — removed the cross-chunk Gemma filter buffer that discarded newline-only SSE deltas; filtering is now per-chunk so lists, headings, and code blocks render correctly in Copilot Chat.
+* **`no_proxy.js` import corruption** — remove duplicated `os` / `path` requires introduced in the v1.0.5 build.
+* **`supports_tools` honored** — respect `supports_tools: 0` in `proxy_configs.json` when advertising tool-calling capability to Copilot.
+
 ## [1.0.5] — 2026-06-02
 
 ### Fixed

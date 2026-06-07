@@ -33,11 +33,26 @@ const THINKING_DEEP = new Set(["max", "deep", "深度", "heavy", "重度", "高"
 function parseProxyEntry(proxy) {
     return {
         supportsImages: parseSupportsImages(proxy),
+        supportsTools: parseSupportsTools(proxy),
         contextWindowTokens: parseContextWindowSize(proxy),
         maxOutputTokens: parseMaxOutputTokens(proxy),
         temperature: parseTemperature(proxy),
         thinkingMode: parseThinkingMode(proxy),
     };
+}
+function parseSupportsTools(proxy) {
+    const raw = proxy.supports_tools ?? proxy.supportsTools ?? proxy["Supports Tools"];
+    if (raw === undefined || raw === null || raw === "") {
+        return true;
+    }
+    if (typeof raw === "boolean") {
+        return raw;
+    }
+    if (typeof raw === "number") {
+        return raw === 1;
+    }
+    const s = String(raw).trim().toLowerCase();
+    return s === "1" || s === "true" || s === "yes";
 }
 function parseSupportsImages(proxy) {
     const raw = proxy.supports_images ?? proxy.supportsImages ?? proxy["Supports Images"];

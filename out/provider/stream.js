@@ -126,9 +126,22 @@ function getReplayMarkerMetadata(prepared, state) {
     };
 }
 function handleThinking(text, state, progress) {
-    state.accumulatedReasoning += text;
+    const cleaned = stripGemmaChannelLeaksForStream(text);
+    if (!cleaned.trim()) {
+        return;
+    }
+    state.accumulatedReasoning += cleaned;
     // LanguageModelThinkingPart is a proposed API; the project root augmentation provides types.
-    progress.report(new vscode_1.default.LanguageModelThinkingPart(text));
+    progress.report(new vscode_1.default.LanguageModelThinkingPart(cleaned));
+}
+function stripGemmaChannelLeaksForStream(text) {
+    if (!text) {
+        return "";
+    }
+    return text
+        .replace(/<\|channel>thought[\s\S]*?<\|channel\|>/gi, "")
+        .replace(/(?:<\|channel>thought|thought\s*<\|channel\|>|thought\s*<\|channel>)/gi, "")
+        .replace(/<\|channel\|>|<\|channel>/gi, "");
 }
 function handleToolCall(toolCall, state, progress) {
     state.emittedToolCallIds.push(toolCall.id);

@@ -8,6 +8,20 @@ const logger_1 = require("./logger");
 const no_proxy_1 = require("./no_proxy");
 const sanitize_1 = require("./provider/tools/sanitize");
 const SSE_BRIDGE_SCRIPT = path.join(__dirname, "sse_bridge.js");
+const GEMMA_THINK_START_RE = /<\|channel>thought/i;
+const GEMMA_ORPHAN_RE = /<\|channel\|>|<\|channel>/gi;
+const GEMMA_THOUGHT_LEAK_RE = /(?:<\|channel>thought|thought\s*<\|channel\|>|thought\s*<\|channel>)/gi;
+/** Strip Gemma 4 channel leaks per chunk. No cross-chunk buffer — buffering ate newline-only SSE deltas and broke Markdown layout. LM Studio reasoning parser is the primary fix. */
+function stripGemmaChannelOrphans(text) {
+    if (!text) {
+        return "";
+    }
+    return text
+        .replace(/<\|channel>thought[\s\S]*?<\|channel\|>/gi, "")
+        .replace(GEMMA_THOUGHT_LEAK_RE, "")
+        .replace(GEMMA_ORPHAN_RE, "")
+        .replace(GEMMA_THINK_START_RE, "");
+}
 function stripToolsFromRequest(body) {
     const req = JSON.parse(body);
     delete req.tools;
@@ -56,6 +70,13 @@ class DeepSeekClient {
         const pendingToolCalls = new Map();
         let buffer = "";
         let cancelListener;
+        const emitContent = (content) => {
+            const cleaned = stripGemmaChannelOrphans(content);
+            if (cleaned) {
+                callbacks.onContent(cleaned);
+            }
+        };
+        const flushContent = () => { };
         const processLines = () => {
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
@@ -65,6 +86,7 @@ class DeepSeekClient {
                     continue;
                 }
                 if (trimmed === "data: [DONE]") {
+                    flushContent();
                     for (const tc of pendingToolCalls.values()) {
                         callbacks.onToolCall(tc);
                     }
@@ -87,10 +109,13 @@ class DeepSeekClient {
                     }
                     const reasoning = choice.delta?.reasoning_content;
                     if (reasoning) {
-                        callbacks.onThinking(reasoning);
+                        const cleanedReasoning = stripGemmaChannelOrphans(reasoning);
+                        if (cleanedReasoning.trim()) {
+                            callbacks.onThinking(cleanedReasoning);
+                        }
                     }
                     if (choice.delta?.content) {
-                        callbacks.onContent(choice.delta.content);
+                        emitContent(choice.delta.content);
                     }
                     if (choice.delta?.tool_calls) {
                         for (const tc of choice.delta.tool_calls) {
@@ -142,6 +167,7 @@ class DeepSeekClient {
                 buffer += "\n";
                 processLines();
             }
+            flushContent();
             for (const tc of pendingToolCalls.values()) {
                 callbacks.onToolCall(tc);
             }
