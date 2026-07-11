@@ -12,6 +12,17 @@
       "temperature": 0.5,
       "thinking_mode": "标准"
     },
+    "lmstudio-vision-native": {
+      "name": "LM Studio Vision (native)",
+      "description": "Example: supports_images=2 sends OpenAI image_url to backend",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "api_key": "lm-studio",
+      "model_id": "local/qwen3.6-35b-a3b-moe",
+      "supports_images": 2,
+      "context_window_size": "1M",
+      "temperature": 0.3,
+      "thinking_mode": "停用"
+    },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek V4 Flash (example)",

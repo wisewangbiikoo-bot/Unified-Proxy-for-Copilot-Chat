@@ -56,17 +56,45 @@ function parseSupportsTools(proxy) {
 }
 function parseSupportsImages(proxy) {
     const raw = proxy.supports_images ?? proxy.supportsImages ?? proxy["Supports Images"];
+    // Modes: 0=off, 1=vision-proxy text describe, 2=native OpenAI image_url
     if (raw === undefined || raw === null || raw === "") {
-        return false;
+        return 0;
     }
     if (typeof raw === "boolean") {
-        return raw;
+        // Backward compat: true -> legacy describe path (1)
+        return raw ? 1 : 0;
     }
-    if (typeof raw === "number") {
-        return raw === 1;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+        const n = Math.floor(raw);
+        if (n <= 0) {
+            return 0;
+        }
+        if (n === 1) {
+            return 1;
+        }
+        return 2;
     }
     const s = String(raw).trim().toLowerCase();
-    return s === "1" || s === "true" || s === "yes";
+    if (s === "0" || s === "false" || s === "no" || s === "off" || s === "none") {
+        return 0;
+    }
+    if (s === "2" || s === "native" || s === "image_url" || s === "multimodal") {
+        return 2;
+    }
+    if (s === "1" || s === "true" || s === "yes" || s === "describe" || s === "proxy") {
+        return 1;
+    }
+    const n = Number(s);
+    if (Number.isFinite(n)) {
+        if (n <= 0) {
+            return 0;
+        }
+        if (n === 1) {
+            return 1;
+        }
+        return 2;
+    }
+    return 0;
 }
 function parseContextWindowSize(proxy) {
     const raw = proxy.context_window_size ??

@@ -45,7 +45,8 @@ function buildModelFromProxy(key, proxy) {
         maxOutputTokens: maxOutputForUi,
         capabilities: {
             toolCalling: options.supportsTools ? 128 : 0,
-            imageInput: options.supportsImages,
+            // Copilot UI: allow attaching images for modes 1 and 2
+            imageInput: options.supportsImages > 0,
             thinking: true,
         },
         requiresThinkingParam: false,

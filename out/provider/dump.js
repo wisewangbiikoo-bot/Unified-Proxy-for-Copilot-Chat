@@ -76,7 +76,10 @@ function dumpDeepSeekRequest(request, options) {
         await writeJsonFile(paths.resolved, createPipelineSnapshot('resolved', request, options.resolvedMessages, options, context));
         const requestJson = await writeJsonFile(paths.request, request, (value) => JSON.stringify(value, null, 2));
         if (msg0 && paths.msg0) {
-            await writeTextFile(paths.msg0, msg0.content);
+            const msg0Text = typeof msg0.content === "string"
+                ? msg0.content
+                : JSON.stringify(msg0.content, null, 2);
+            await writeTextFile(paths.msg0, msg0Text);
         }
         await writeDumpObservation(options.globalStorageUri, createDumpObservation({
             event: 'deepseek-request',

@@ -2,6 +2,22 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.0.8] — 2026-07-11
+
+### Changed
+
+* **`supports_images` 三档模式**
+  * `0` — 不支持图片，丢弃图片附件
+  * `1` — 旧路径：经 VS Code 识图代理转成文字描述后再发给后端
+  * `2` — 原生多模态：将图片转为 OpenAI `image_url`（`data:image/...;base64,...`）发给后端（如 LM Studio + mmproj）
+* 布尔值兼容：`true` → `1`，`false` → `0`
+* Copilot UI `imageInput` 在模式 `1`/`2` 时开启，允许贴图
+
+### Fixed
+
+* 模式 `2` 下不再误走「识图转文字」导致出现 `[Image Description unavailable]`
+* `dump` 写入首条 message 时兼容 `content` 为数组（多模态）
+
 ## [1.0.6] — 2026-06-07
 
 ### Added

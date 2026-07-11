@@ -31,6 +31,16 @@ function resolveMaxOutputTokens(proxyConfig) {
 function resolveTemperature(proxyConfig) {
     return proxyConfig.temperature ?? proxy_config_parse_1.DEFAULT_TEMPERATURE;
 }
+function normalizeImageMode(value) {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n) || n <= 0) {
+        return 0;
+    }
+    if (n === 1) {
+        return 1;
+    }
+    return 2;
+}
 async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, segment, messages, options, token, cacheDiagnostics, getVisionModel, }) {
     const proxy_config_loader_1 = require("../proxy_config_loader");
     const proxyConfig = (0, proxy_config_loader_1.getProxyConfig)(modelInfo.id);
@@ -46,12 +56,18 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     const thinkingEffort = (0, models_1.getConfiguredThinkingEffort)(options, proxyConfig?.thinkingMode);
     const maxTokens = resolveMaxOutputTokens(proxyConfig);
     const temperature = resolveTemperature(proxyConfig);
-    const supportsImages = proxyConfig?.supportsImages ?? false;
-    const visionResolution = supportsImages
+    // supports_images:
+    //   0 = drop images
+    //   1 = legacy vision-proxy: describe image as text, then send text-only
+    //   2 = native multimodal: OpenAI image_url to backend (e.g. LM Studio)
+    const imageMode = normalizeImageMode(proxyConfig?.supportsImages);
+    const visionResolution = imageMode === 1
         ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel)
         : emptyVisionResolution(messages);
     const resolvedMessages = visionResolution.messages;
-    const deepseekMessages = (0, convert_1.convertMessages)(resolvedMessages, isThinkingModel);
+    const deepseekMessages = (0, convert_1.convertMessages)(resolvedMessages, isThinkingModel, {
+        passNativeImages: imageMode === 2,
+    });
     const tools = (0, request_1.prepareRequestTools)(modelDef?.capabilities.toolCalling, options);
     const totalRequestChars = (0, convert_1.countMessageChars)(deepseekMessages);
     const request = {
