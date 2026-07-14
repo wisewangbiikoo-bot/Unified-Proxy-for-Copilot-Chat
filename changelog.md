@@ -2,6 +2,12 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.0.9] — 2026-07-14
+
+### Fixed
+
+* **SSE streaming UTF-8 split‑character corruption** — `client.js` used `chunk.toString("utf8")` which produces `�` (U+FFFD) when a multi‑byte character (e.g. Chinese) is split across two TCP/HTTP chunks. Replaced with `TextDecoder(stream: true)` that preserves partial byte state across decode calls.
+
 ## [1.0.8] — 2026-07-11
 
 ### Changed

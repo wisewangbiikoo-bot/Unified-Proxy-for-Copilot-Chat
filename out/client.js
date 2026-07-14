@@ -70,6 +70,7 @@ class DeepSeekClient {
         const pendingToolCalls = new Map();
         let buffer = "";
         let cancelListener;
+        const textDecoder = new TextDecoder("utf-8", { fatal: false });
         const emitContent = (content) => {
             const cleaned = stripGemmaChannelOrphans(content);
             if (cleaned) {
@@ -159,10 +160,14 @@ class DeepSeekClient {
             if (chunk == null || chunk.length === 0) {
                 return false;
             }
-            buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+            buffer += typeof chunk === "string" ? chunk : textDecoder.decode(chunk, { stream: true });
             return processLines();
         };
         const finishStream = (resolve) => {
+            const tail = textDecoder.decode();
+            if (tail) {
+                buffer += tail;
+            }
             if (buffer.length > 0) {
                 buffer += "\n";
                 processLines();
