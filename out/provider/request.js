@@ -62,7 +62,7 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     //   2 = native multimodal: OpenAI image_url to backend (e.g. LM Studio)
     const imageMode = normalizeImageMode(proxyConfig?.supportsImages);
     const visionResolution = imageMode === 1
-        ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel)
+        ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel, proxyConfig?.visionProxy)
         : emptyVisionResolution(messages);
     const resolvedMessages = visionResolution.messages;
     const deepseekMessages = (0, convert_1.convertMessages)(resolvedMessages, isThinkingModel, {

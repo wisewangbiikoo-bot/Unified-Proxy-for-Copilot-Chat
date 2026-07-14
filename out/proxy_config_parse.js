@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_CONTEXT_WINDOW_TOKENS = exports.DEFAULT_TEMPERATURE = void 0;
 exports.parseProxyEntry = parseProxyEntry;
+exports.parseVisionProxyConfig = parseVisionProxyConfig;
 /** Default max output: omit from API request (unlimited). */
 exports.DEFAULT_MAX_OUTPUT_TOKENS = undefined;
 exports.DEFAULT_TEMPERATURE = 0.5;
@@ -38,6 +39,7 @@ function parseProxyEntry(proxy) {
         maxOutputTokens: parseMaxOutputTokens(proxy),
         temperature: parseTemperature(proxy),
         thinkingMode: parseThinkingMode(proxy),
+        visionProxy: parseVisionProxyConfig(proxy),
     };
 }
 function parseSupportsTools(proxy) {
@@ -165,4 +167,60 @@ function parseThinkingMode(proxy) {
         return "high";
     }
     return "none";
+}
+
+/**
+ * Parse the optional vision_proxy config for a proxy entry.
+ * Returns null if not configured.
+ *
+ * Config structure (in proxy_configs.json):
+ *   "vision_proxy": {
+ *     "type": "endpoint",           // "endpoint" | "vscode-lm"
+ *     "protocol": "openai-chat",    // "openai-chat" | "openai-responses" | "anthropic-messages"
+ *     "base_url": "http://...",     // endpoint URL (required for type=endpoint)
+ *     "api_key": "...",             // API key for the endpoint
+ *     "model_id": "...",            // vision model ID
+ *     "custom_headers": { ... }     // optional extra HTTP headers
+ *   }
+ */
+function parseVisionProxyConfig(proxy) {
+    const raw = proxy.vision_proxy ?? proxy.visionProxy ?? null;
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+    const type = parseStringField(raw, "type", "vscode-lm").toLowerCase();
+    if (type !== "endpoint" && type !== "vscode-lm") {
+        return null;
+    }
+    if (type === "vscode-lm") {
+        // type=vscode-lm means use VS Code LM API (existing behavior).
+        // No extra fields needed; model selection via settings or default.
+        return { type: "vscode-lm", protocol: null, baseUrl: null, apiKey: null, modelId: null, customHeaders: null };
+    }
+    // type=endpoint
+    const protocol = parseStringField(raw, "protocol", "openai-chat").toLowerCase();
+    const baseUrl = parseStringField(raw, "base_url") || parseStringField(raw, "baseUrl") || "";
+    const apiKey = parseStringField(raw, "api_key") || parseStringField(raw, "apiKey") || "";
+    const modelId = parseStringField(raw, "model_id") || parseStringField(raw, "modelId") || "";
+    let customHeaders = null;
+    if (raw.custom_headers && typeof raw.custom_headers === "object") {
+        customHeaders = {};
+        for (const [k, v] of Object.entries(raw.custom_headers)) {
+            if (typeof v === "string") {
+                customHeaders[k] = v;
+            }
+        }
+    }
+    if (!baseUrl) {
+        return null;
+    }
+    return { type: "endpoint", protocol, baseUrl, apiKey, modelId, customHeaders };
+}
+
+function parseStringField(obj, key, fallback) {
+    const v = obj[key];
+    if (v && typeof v === "string") {
+        return v.trim() || (fallback ?? "");
+    }
+    return fallback ?? "";
 }

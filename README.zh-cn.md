@@ -97,6 +97,37 @@
 | `1` | **视觉代理**：自动调用 Gemini 等视觉模型分析图片，将描述文字注入请求后转发给目标模型 | 本身不支持视觉但需要图片理解能力的后端 |
 | `2` | **原生传递**：将 OpenAI `image_url` 格式的图片直接发送给后端 | 后端本身支持视觉（如 Gemini、Qwen Vision 等） |
 
+**`vision_proxy` 配置（仅 `supports_images=1` 时生效）：**
+
+可在每个 proxy 条目中设置独立的视觉代理后端，覆盖全局设置。
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|:----:|------|
+| `type` | `"endpoint"` / `"vscode-lm"` | 否 | 默认为 `"vscode-lm"`（使用 VS Code LM API）；`"endpoint"` 时使用自定义 HTTP 端点 |
+| `protocol` | 字符串 | 否 | 端点协议：`"openai-chat"`（默认）、`"openai-responses"`、`"anthropic-messages"` |
+| `base_url` | 字符串 | `type=endpoint` 时必需 | 视觉 API 的根地址，如 `http://192.168.1.36:4150/v1` |
+| `api_key` | 字符串 | 否 | 视觉 API 的 Bearer Token |
+| `model_id` | 字符串 | 否 | 视觉模型 ID，如 `gemini-2.5-flash-lite` |
+| `custom_headers` | 对象 | 否 | 自定义 HTTP 头，如 `{ "HTTP-Referer": "http://localhost" }` |
+
+示例：
+```json
+{
+  "proxies": {
+    "deepseek": {
+      "supports_images": 1,
+      "vision_proxy": {
+        "type": "endpoint",
+        "protocol": "openai-chat",
+        "base_url": "http://192.168.1.36:4150/v1",
+        "api_key": "YOUR_GEMINI_KEY",
+        "model_id": "gemini-2.5-flash-lite"
+      }
+    }
+  }
+}
+```
+
 **`thinking_mode` 取值**（与菜单一致）：
 
 | 配置值 | 菜单 | API |

@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.1.0] — 2026-07-14
+
+### Added
+
+* **Configurable vision proxy per backend** — `vision_proxy` field in `proxy_configs.json`. Each proxy entry with `supports_images: 1` can now specify its own vision backend via endpoint (OpenAI Chat, OpenAI Responses, Anthropic Messages) instead of relying solely on VS Code LM API. See README.zh-cn.md for details.
+* **New files**: `out/provider/vision/endpoint.js` — endpoint-based vision describer client supporting three protocols.
+
 ## [1.0.9] — 2026-07-14
 
 ### Fixed

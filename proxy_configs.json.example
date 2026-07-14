@@ -29,7 +29,15 @@
       "base_url": "http://proxy.example.com:4154/v1",
       "api_key": "YOUR_DEEPSEEK_API_KEY",
       "model_id": "deepseek-v4-flash",
-      "supports_images": 0,
+      "supports_images": 1,
+      "vision_proxy": {
+        "type": "endpoint",
+        "protocol": "openai-chat",
+        "base_url": "http://proxy.example.com:4150/v1",
+        "api_key": "YOUR_VISION_PROXY_API_KEY",
+        "model_id": "gemini-2.5-flash-lite"
+      },
+      "supports_tools": 1,
       "context_window_size": 128000,
       "temperature": 0.5,
       "thinking_mode": "深度"

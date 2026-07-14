@@ -15,8 +15,11 @@ const model_1 = require("./model");
  * Resolve image parts without treating image bytes as persistent identity.
  * Historical images replay marker-carried text; only the current tail user
  * image message is sent to the vision proxy.
+ *
+ * @param {object} [visionProxyConfig] - Optional per-backend vision_proxy config.
+ *   When present with type="endpoint", uses the configured endpoint instead of VS Code LM.
  */
-async function resolveImageMessages(messages, token, getModel) {
+async function resolveImageMessages(messages, token, getModel, visionProxyConfig) {
     const stats = createVisionResolutionStats();
     collectInputImageStats(messages, stats);
     if (stats.inputImageParts === 0) {
@@ -47,11 +50,15 @@ async function resolveImageMessages(messages, token, getModel) {
         }
         if (messageIndex === currentImageMessageIndex) {
             stats.currentImageMessages += 1;
-            if (!visionModelRequested) {
+            // Lazy-init VS Code LM vision model only for non-endpoint path
+            if (!visionModel && !visionModelRequested && visionProxyConfig?.type !== "endpoint") {
                 visionModelRequested = true;
                 visionModel = await getModel();
             }
-            const visionText = await resolveCurrentVisionText(imageParts, nonImageParts, visionModel, stats, token);
+            const visionText = await resolveCurrentVisionText(
+                imageParts, nonImageParts, visionModel, stats, token,
+                visionProxyConfig,
+            );
             markerVisionText = visionText;
             stats.markerVisionTextChars = visionText.length;
             stats.droppedImageParts += imageParts.length;
@@ -158,11 +165,26 @@ function findCurrentImageMessageIndex(messages) {
     }
     return undefined;
 }
-async function resolveCurrentVisionText(imageParts, nonImageParts, visionModel, stats, token) {
-    if (!visionModel || token.isCancellationRequested) {
-        if (!visionModel) {
-            logger_1.logger.warn((0, i18n_1.t)('vision.unavailable'));
+async function resolveCurrentVisionText(imageParts, nonImageParts, visionModel, stats, token, visionProxyConfig) {
+    // If per-backend endpoint vision proxy is configured, use it
+    if (visionProxyConfig?.type === "endpoint") {
+        try {
+            const description = await (0, model_1.describeViaEndpoint)(imageParts, visionProxyConfig, token);
+            if (description.length > 0) {
+                stats.generatedImageMessages += 1;
+                return createVisionReplayText(createImageDescriptionText(description), nonImageParts);
+            }
+            stats.failedImageMessages += 1;
+            return createVisionReplayText(consts_1.IMAGE_DESCRIPTION_UNAVAILABLE, nonImageParts);
+        } catch (error) {
+            logger_1.logger.error("[vision] endpoint proxy error:", error);
+            stats.failedImageMessages += 1;
+            return createVisionReplayText(consts_1.IMAGE_DESCRIPTION_UNAVAILABLE, nonImageParts);
         }
+    }
+    // Fallback: VS Code LM model
+    if (!visionModel) {
+        logger_1.logger.warn((0, i18n_1.t)('vision.unavailable'));
         stats.unavailableImageMessages += 1;
         return createVisionReplayText(consts_1.IMAGE_DESCRIPTION_UNAVAILABLE, nonImageParts);
     }
