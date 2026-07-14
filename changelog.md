@@ -2,6 +2,20 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.2.0] — 2026-07-14
+
+### Changed
+
+* **Dedupe streaming usage reports** (#145 upstream) — `client.js` accumulates usage
+  from SSE chunks and emits only once at stream end, preventing inflated token counts
+  in Copilot UI when backends send per-chunk usage.
+* **Wrap usage reporting in try/catch** (#145) — `stream.js` guards
+  `reportCopilotContextUsage` so a rejected data part doesn't block replay marker
+  or cache diagnostics.
+* **Improved error diagnostics** (#104/#109) — `client.js` now logs detailed error
+  context (target URL, specific failure hints for timeout/DNS/auth/reset) and
+  `stream.js` logs error with model name before re-throwing.
+
 ## [1.1.0] — 2026-07-14
 
 ### Added

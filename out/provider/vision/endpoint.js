@@ -208,9 +208,14 @@ async function doAnthropicMessages(url, apiKey, model, imageDataArray, mimeTypes
     const parsed = new URL(url);
     const headers = {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
     };
+    if (apiKey) {
+        // Anthropic native uses x-api-key; OpenCode Go / generic use Bearer.
+        // Send both to maximize compatibility; customHeaders can override.
+        headers["x-api-key"] = apiKey;
+        headers.Authorization = `Bearer ${apiKey}`;
+    }
     if (customHeaders) {
         for (const [k, v] of Object.entries(customHeaders)) {
             headers[k] = v;

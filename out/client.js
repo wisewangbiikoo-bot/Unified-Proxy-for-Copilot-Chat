@@ -70,11 +70,18 @@ class DeepSeekClient {
         const pendingToolCalls = new Map();
         let buffer = "";
         let cancelListener;
+        let lastUsage = null;
         const textDecoder = new TextDecoder("utf-8", { fatal: false });
         const emitContent = (content) => {
             const cleaned = stripGemmaChannelOrphans(content);
             if (cleaned) {
                 callbacks.onContent(cleaned);
+            }
+        };
+        const emitUsage = () => {
+            if (lastUsage && callbacks.onUsage) {
+                callbacks.onUsage(lastUsage);
+                lastUsage = null;
             }
         };
         const flushContent = () => { };
@@ -88,6 +95,7 @@ class DeepSeekClient {
                 }
                 if (trimmed === "data: [DONE]") {
                     flushContent();
+                    emitUsage();
                     for (const tc of pendingToolCalls.values()) {
                         callbacks.onToolCall(tc);
                     }
@@ -102,8 +110,9 @@ class DeepSeekClient {
                 try {
                     const chunk = JSON.parse(jsonStr);
                     const choice = chunk.choices?.[0];
-                    if (chunk.usage && callbacks.onUsage) {
-                        callbacks.onUsage(chunk.usage);
+                    // Accumulate usage, emit only once at stream end (#145)
+                    if (chunk.usage) {
+                        lastUsage = chunk.usage;
                     }
                     if (!choice) {
                         continue;
@@ -173,6 +182,7 @@ class DeepSeekClient {
                 processLines();
             }
             flushContent();
+            emitUsage();
             for (const tc of pendingToolCalls.values()) {
                 callbacks.onToolCall(tc);
             }
@@ -237,7 +247,10 @@ class DeepSeekClient {
                     child.stdin.end();
                 }
             };
-            child.stdin.on("error", reject);
+            child.stdin.on("error", (err) => {
+                logger_1.logger.error(`SSE bridge stdin error for ${url.slice(0, 80)}: ${err.message}`);
+                reject(err);
+            });
             endStdin();
             child.stderr.on("data", (c) => {
                 stderr += c.toString();
@@ -250,7 +263,10 @@ class DeepSeekClient {
                     resolve();
                 }
             });
-            child.on("error", reject);
+            child.on("error", (err) => {
+                logger_1.logger.error(`SSE bridge child process error for ${url.slice(0, 80)}: ${err.message}`);
+                reject(err);
+            });
             child.on("close", (code) => {
                 cancelSub?.dispose();
                 if (finished) {
@@ -258,13 +274,24 @@ class DeepSeekClient {
                 }
                 if (code !== 0) {
                     const detail = stderr.slice(0, 500);
-                    const hint = detail.includes("ETIMEDOUT") || detail.includes("ECONNREFUSED")
-                        ? " Check that the proxy server is running and reachable from this PC (e.g. curl http://host:port/v1/models)."
-                        : "";
+                    let hint = "";
+                    if (detail.includes("ETIMEDOUT") || detail.includes("connect timeout")) {
+                        hint = " Connection timed out. Check that the proxy server is running and reachable (e.g. curl http://host:port/v1/models).";
+                    } else if (detail.includes("ECONNREFUSED")) {
+                        hint = " Connection refused. The server may be down or the port is wrong.";
+                    } else if (detail.includes("ECONNRESET")) {
+                        hint = " Connection reset. The server may have terminated the connection unexpectedly.";
+                    } else if (detail.includes("ENOTFOUND")) {
+                        hint = " DNS resolution failed. Check the hostname in base_url.";
+                    } else if (detail.includes("401") || detail.includes("403")) {
+                        hint = " Authentication failed. Check api_key.";
+                    }
+                    logger_1.logger.error(`SSE bridge exit ${code} for ${url.slice(0, 80)}: ${detail.slice(0, 200)}${hint}`);
                     reject(new Error(`SSE bridge exit ${code}: ${detail}${hint}`));
                     return;
                 }
                 if (stdoutBytes === 0) {
+                    logger_1.logger.warn(`SSE bridge returned no stdout data for ${url.slice(0, 80)}`);
                     reject(new Error("SSE bridge returned no stdout data"));
                     return;
                 }

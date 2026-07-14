@@ -32,6 +32,7 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
             handleToolCall(toolCall, state, progress);
         },
         onError: (error) => {
+            logger_1.logger.error(`Stream error for ${prepared.request?.model || '?'}: ${error?.message || error}`);
             throw error;
         },
         onDone: () => {
@@ -42,7 +43,11 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
             const charsPerToken = updateCharsPerToken(prepared.totalRequestChars, usage, getCharsPerToken());
             setCharsPerToken(charsPerToken);
             prepared.cacheDiagnostics.onUsage(usage, charsPerToken);
-            reportCopilotContextUsage(progress, usage);
+            try {
+                reportCopilotContextUsage(progress, usage);
+            } catch (e) {
+                logger_1.logger.warn('Failed to report usage to Copilot context', e);
+            }
         },
     }, token)
         .then(undefined, (error) => {
