@@ -195,6 +195,13 @@ class DeepSeekClient {
         return runBridge(body)
             .catch(async (err) => {
             const msg = err?.message || String(err);
+            // Retry once on transient upstream provider errors
+            if (!retried && (msg.includes("Upstream request failed") || msg.includes("500") || msg.includes("502") || msg.includes("503"))) {
+                retried = true;
+                logger_1.logger.warn("Upstream provider error; retrying once");
+                await new Promise((r) => setTimeout(r, 1000));
+                return runBridge(body);
+            }
             if (!msg.includes("no stdout data") && !msg.includes("SSE bridge returned")) {
                 throw err;
             }

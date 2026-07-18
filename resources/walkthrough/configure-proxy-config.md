@@ -20,4 +20,4 @@ Create the file (or copy from `proxy_configs.json.example` in the extension fold
 
 Then run **[Unified Proxy: Reload Config](command:unified-proxy-copilot.reloadConfig)** and pick **my-model** under the **Unified Proxy** vendor in Copilot Chat.
 
-Full field reference: see **README.zh-cn.md** in the extension folder. General Copilot/agent behavior: **DeepSeek V4 for Copilot Chat v0.5.2** docs.
+Full field reference: see **README.zh-cn.md** in the extension folder. General Copilot/agent behavior: **DeepSeek V4 for Copilot Chat v0.6.2** docs.

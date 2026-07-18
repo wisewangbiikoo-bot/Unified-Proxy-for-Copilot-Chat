@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.2.1] — 2026-07-18
+
+### Fixed
+
+* **Retry on upstream provider errors** — `client.js` now retries once with 1s delay
+  when the upstream returns "Upstream request failed" or HTTP 5xx errors, reducing
+  transient failures from providers like Console Go (Kimi, MiniMax).
+
 ## [1.2.0] — 2026-07-14
 
 ### Changed

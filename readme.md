@@ -2,9 +2,9 @@
 
 **Use multiple OpenAI-compatible AI backends from the GitHub Copilot Chat model picker — driven by a single JSON config file.**
 
-This extension is based on **[DeepSeek V4 for Copilot Chat v0.5.2](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing**.
+This extension is based on **[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing**.
 
-> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.5.2** documentation.
+> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.6.2** documentation.
 
 简体中文完整说明见 [README.zh-cn.md](./README.zh-cn.md)（含 `proxy_configs.json` 配置章节，示例均使用占位符）。
 
@@ -15,10 +15,13 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.5.2](https://githu
 ## What we added
 
 - One Copilot model entry per proxy in `proxy_configs.json`
-- Per-model: images on/off, context window, max output, temperature, default thinking level
+- Per-model: images on/off (0/1/2), context window, max output, temperature, default thinking level
+- **Configurable vision proxy** (v1.1.0): each backend can specify its own vision source — VS Code LM, or an API endpoint (OpenAI Chat, Anthropic Messages, OpenAI Responses)
+- **Per-backend vision proxy** (v1.1.0): `vision_proxy` field in `proxy_configs.json` for per-model vision configuration
 - Tool-schema sanitization for OpenAI-compatible gateways
 - SSE child-process bridge with LAN / `NO_PROXY` handling
 - Thinking menu: **Off / Standard / Deep** (same as DeepSeek V4)
+- Deduplicated streaming usage reports (v1.2.0) — prevents inflated token counts
 
 ## Quick start
 
