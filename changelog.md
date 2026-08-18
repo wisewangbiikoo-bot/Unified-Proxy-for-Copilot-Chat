@@ -2,6 +2,36 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.2.3] — 2026-08-18
+
+### Added
+
+* **Low reasoning effort (轻量推理)** — sync upstream DeepSeek V4 0.7.0/0.7.1:
+  model picker thinking menu now offers `none / low / high / max`; `proxy_configs.json`
+  `thinking_mode` accepts `low` / `light` / `轻量` / `轻度` etc. and maps to
+  `reasoning_effort: low`.
+
+### Fixed
+
+* **Mark models as BYOK** — sync upstream 0.6.2 (#162): `toChatInfo` now sets
+  `isBYOK: true` so Copilot Chat renders the BYOK badge correctly.
+* **Vision model selection disambiguation** — sync upstream 0.6.2 (#161): the
+  vision proxy model picker now saves `vendor/id` instead of a bare model id;
+  legacy bare ids are still read for compatibility.
+* **Explicit thinking-off payload** — when thinking is disabled, the request now
+  sends `chat_template_kwargs: { enable_thinking: false }` for backends that need
+  the explicit flag instead of relying on `thinking.type: disabled` alone.
+
+## [1.2.2] — 2026-08-18
+
+### Fixed
+
+* **Model picker refresh race on startup** — after loading models, force the host to
+  re-pull `provideLanguageModelChatInformation` synchronously via
+  `selectChatModels({ vendor: 'unified-proxy' })`, and re-fire the change event at
+  2s / 5s delays so the picker still shows models if Copilot Chat missed the first
+  event during startup.
+
 ## [1.2.1] — 2026-07-18
 
 ### Fixed

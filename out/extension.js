@@ -24,6 +24,10 @@ function reloadModelsFromConfig(notify = false) {
     consts.MODELS.length = 0;
     consts.MODELS.push(...proxy_config_loader_1.loadModelsFromConfig());
     activeProvider?.refreshModelPicker();
+    // Force the host to re-pull `provideLanguageModelChatInformation`
+    // synchronously (same trick as prepareForDeactivate). This covers the
+    // startup race where Copilot Chat missed the refresh event above.
+    void vscode_1.default.lm.selectChatModels({ vendor: 'unified-proxy' }).catch(() => { });
     const ids = consts.MODELS.map((m) => m.id).join(", ");
     logger_1.logger.info(`Loaded ${consts.MODELS.length} models from ${configPath}: ${ids}`);
     if (notify) {

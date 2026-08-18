@@ -77,6 +77,18 @@ class DeepSeekChatProvider {
     /** Force Copilot Chat to re-query model information (including configurationSchema). */
     refreshModelPicker() {
         this.onDidChangeLanguageModelChatInformationEmitter.fire();
+        // Copilot Chat may not have registered its listener yet during startup
+        // (race between onStartupFinished activation and Copilot Chat init).
+        // Re-fire after delays so the picker eventually shows the models even
+        // if the first event was lost. Guarded by isActive to avoid firing
+        // after deactivate.
+        for (const delayMs of [2000, 5000]) {
+            setTimeout(() => {
+                if (this.isActive) {
+                    this.onDidChangeLanguageModelChatInformationEmitter.fire();
+                }
+            }, delayMs);
+        }
     }
     async prepareForDeactivate() {
         this.isActive = false;

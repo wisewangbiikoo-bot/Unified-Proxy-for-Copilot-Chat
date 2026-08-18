@@ -8,7 +8,7 @@ exports.DEFAULT_MAX_OUTPUT_TOKENS = undefined;
 exports.DEFAULT_TEMPERATURE = 0.5;
 /** 128K for Copilot UI (displays tokens/1000); use 128000 not 131072. */
 exports.DEFAULT_CONTEXT_WINDOW_TOKENS = 128000;
-/** Same enum as DeepSeek V4 Copilot UI: none | high | max */
+/** Same enum as DeepSeek V4 Copilot UI: none | low | high | max */
 const THINKING_OFF = new Set([
     "off",
     "none",
@@ -16,6 +16,14 @@ const THINKING_OFF = new Set([
     "停用",
     "0",
     "false",
+]);
+const THINKING_LIGHT = new Set([
+    "low",
+    "light",
+    "轻量",
+    "轻度",
+    "quick",
+    "fast",
 ]);
 const THINKING_STANDARD = new Set([
     "high",
@@ -146,7 +154,7 @@ function parseTemperature(proxy) {
     }
     return Math.min(2, Math.max(0, n));
 }
-/** Returns none | high | max (DeepSeek V4 reasoningEffort). Default: none (停用). */
+/** Returns none | low | high | max (DeepSeek V4 reasoningEffort). Default: none (停用). */
 function parseThinkingMode(proxy) {
     const raw = proxy.thinking_mode ??
         proxy.thinkingMode ??
@@ -165,6 +173,9 @@ function parseThinkingMode(proxy) {
     }
     if (THINKING_STANDARD.has(s) || THINKING_STANDARD.has(trimmed)) {
         return "high";
+    }
+    if (THINKING_LIGHT.has(s) || THINKING_LIGHT.has(trimmed)) {
+        return "low";
     }
     return "none";
 }

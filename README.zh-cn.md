@@ -2,7 +2,7 @@
 
 **在 GitHub Copilot Chat 的模型选择器中，通过配置文件切换多个 OpenAI 兼容后端。**
 
-本插件基于 **[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已后续移植 v0.5.3 ~ v0.6.2 多个上游修复。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 能力。
+本插件基于 **[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已后续移植 v0.5.3 ~ v0.7.1 多个上游修复（含 0.7.0/0.7.1 的 `low` 轻量推理档位）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 能力。
 
 > 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.6.2** 官方文档与源码说明。
 
@@ -30,7 +30,7 @@
 5. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
 6. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
 7. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-8. **思考模式菜单**：与原版一致（停用 / 标准 / 深度），配置文件可设默认档。
+8. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
 
 ## 快速开始
 
@@ -136,6 +136,7 @@
 | 配置值 | 菜单 | API |
 |--------|------|-----|
 | `停用` / `none` | 停用 | `thinking.type: disabled` |
+| `轻量` / `low` | 轻量 | `reasoning_effort: low` |
 | `标准` / `high` | 标准 | `reasoning_effort: high` |
 | `深度` / `max` | 深度 | `reasoning_effort: max` |
 

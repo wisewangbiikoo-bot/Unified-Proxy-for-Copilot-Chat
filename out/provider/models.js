@@ -32,6 +32,7 @@ function toChatInfo(m) {
         statusIcon: showWarning ? new vscode_1.default.ThemeIcon("warning") : undefined,
         maxInputTokens: m.maxInputTokens,
         maxOutputTokens: m.maxOutputTokens,
+        isBYOK: true,
         isUserSelectable: true,
         capabilities: {
             toolCalling: m.capabilities.toolCalling,
@@ -52,11 +53,15 @@ function getThinkingEnumDescription(effort) {
     if (effort === "high") {
         return (0, i18n_1.t)("thinking.high.desc");
     }
+    if (effort === "low") {
+        return (0, i18n_1.t)("thinking.low.desc");
+    }
     return (0, i18n_1.t)("thinking.none.desc");
 }
 /**
- * Same as DeepSeek V4 0.5.2: reads Copilot reasoningEffort (none | high | max).
+ * Reads Copilot reasoningEffort (none | low | high | max).
  * Falls back to schemaDefault from proxy_configs, then "high".
+ * Matches upstream DeepSeek V4 0.7.1 (low added in 0.7.0/0.7.1).
  */
 function getConfiguredThinkingEffort(options, schemaDefault) {
     const configuredEffort = options.modelConfiguration?.reasoningEffort ??
@@ -64,13 +69,16 @@ function getConfiguredThinkingEffort(options, schemaDefault) {
     if (configuredEffort === "none") {
         return "none";
     }
+    if (configuredEffort === "low") {
+        return "low";
+    }
     if (configuredEffort === "high") {
         return "high";
     }
     if (configuredEffort === "max") {
         return "max";
     }
-    if (schemaDefault === "none" || schemaDefault === "high" || schemaDefault === "max") {
+    if (schemaDefault === "none" || schemaDefault === "low" || schemaDefault === "high" || schemaDefault === "max") {
         return schemaDefault;
     }
     return "high";
@@ -83,14 +91,16 @@ function buildThinkingEffortSchema(defaultEffort = "high", modelDescription) {
             reasoningEffort: {
                 type: "string",
                 title: (0, i18n_1.t)("status.thinking"),
-                enum: ["none", "high", "max"],
+                enum: ["none", "low", "high", "max"],
                 enumItemLabels: [
                     (0, i18n_1.t)("thinking.none"),
+                    (0, i18n_1.t)("thinking.low"),
                     (0, i18n_1.t)("thinking.high"),
                     (0, i18n_1.t)("thinking.max"),
                 ],
                 enumDescriptions: [
                     (0, i18n_1.t)("thinking.none.desc"),
+                    (0, i18n_1.t)("thinking.low.desc"),
                     (0, i18n_1.t)("thinking.high.desc"),
                     (0, i18n_1.t)("thinking.max.desc"),
                 ],

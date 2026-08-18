@@ -49,6 +49,11 @@ function createVisionModelGetter() {
 /**
  * Let the user pick which model to use for describing image attachments.
  */
+/**
+ * Let the user pick which model to use for describing image attachments.
+ * Saves the key as `vendor/id` (upstream 0.6.2 #161) to disambiguate
+ * models with the same id from different vendors.
+ */
 async function setVisionProxyModel() {
     const allModels = await vscode_1.default.lm.selectChatModels();
     const candidates = allModels.filter((m) => m.vendor !== 'deepseek');
@@ -56,12 +61,15 @@ async function setVisionProxyModel() {
         vscode_1.default.window.showInformationMessage((0, i18n_1.t)('vision.noModel'));
         return;
     }
-    const currentId = getConfiguredVisionModelId();
-    const items = candidates.map((m) => ({
-        label: m.id,
-        description: (0, i18n_1.t)('vision.vendorLabel', m.vendor),
-        detail: m.id === currentId ? (0, i18n_1.t)('vision.current') : undefined,
-    }));
+    const currentKey = getConfiguredVisionModelKey();
+    const items = candidates.map((m) => {
+        const key = `${m.vendor}/${m.id}`;
+        return {
+            label: key,
+            description: (0, i18n_1.t)('vision.vendorLabel', m.vendor),
+            detail: key === currentKey ? (0, i18n_1.t)('vision.current') : undefined,
+        };
+    });
     const picked = await vscode_1.default.window.showQuickPick(items, {
         placeHolder: (0, i18n_1.t)('vision.pickPlaceholder', consts_1.DEFAULT_VISION_MODEL_ID),
         matchOnDescription: true,
@@ -75,10 +83,26 @@ function getVisionPrompt() {
     const config = vscode_1.default.workspace.getConfiguration('deepseek-copilot');
     return (config.get('visionPrompt', consts_1.IMAGE_DESCRIPTION_PROMPT).trim() || consts_1.IMAGE_DESCRIPTION_PROMPT);
 }
-function getConfiguredVisionModelId() {
+/**
+ * Read the configured vision model key (`vendor/id`).
+ * Legacy bare model IDs are still returned as-is for compatibility.
+ */
+function getConfiguredVisionModelKey() {
     const config = vscode_1.default.workspace.getConfiguration('deepseek-copilot');
-    const id = config.get('visionModel', '');
-    return id.trim() || undefined;
+    const key = config.get('visionModel', '');
+    return key.trim() || undefined;
+}
+/**
+ * Resolve the model id used for selectChatModels lookup.
+ * Accepts both `vendor/id` (new) and bare `id` (legacy).
+ */
+function getConfiguredVisionModelId() {
+    const key = getConfiguredVisionModelKey();
+    if (!key) {
+        return undefined;
+    }
+    const slash = key.indexOf('/');
+    return slash >= 0 ? key.slice(slash + 1) : key;
 }
 
 /**

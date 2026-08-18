@@ -84,7 +84,7 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
                     type: thinkingEffort === "none" ? "disabled" : "enabled",
                 },
                 ...(thinkingEffort === "none"
-                    ? {}
+                    ? { chat_template_kwargs: { enable_thinking: false } }
                     : { reasoning_effort: thinkingEffort }),
             }
             : {}),
