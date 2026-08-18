@@ -20,4 +20,4 @@ Unified Proxy 从 JSON 文件加载后端。**默认路径：** `~/.vscode/proxy
 
 然后执行 **[Unified Proxy: Reload Config](command:unified-proxy-copilot.reloadConfig)**，在 Copilot Chat 的 **Unified Proxy** 提供商下选择 **my-model**。
 
-完整字段说明见扩展目录 **README.zh-cn.md**。Agent、工具、视觉代理等通用能力请参阅 **DeepSeek V4 for Copilot Chat v0.6.2** 官方文档。
+完整字段说明见扩展目录 **README.zh-cn.md**。Agent、工具、视觉代理等通用能力请参阅 **DeepSeek V4 for Copilot Chat v0.7.1** 官方文档。

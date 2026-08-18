@@ -10,7 +10,7 @@ This document explains **positioning, key advantages, comparison with similar ex
 
 > **One `proxy_configs.json` file** maps multiple **OpenAI-compatible proxies** (LAN gateways, self-hosted stacks, unified entrypoints) into separate models in the **GitHub Copilot Chat** picker, while keeping **DeepSeek V4 for Copilot Chat**-level agent, tool, and thinking support.
 
-Built on [DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot) (MIT). Provider ID: `unified-proxy` — can be installed **alongside** the official DeepSeek V4 extension (`deepseek`) without conflicting model vendors.
+Built on [DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot) (MIT). Provider ID: `unified-proxy` — can be installed **alongside** the official DeepSeek V4 extension (`deepseek`) without conflicting model vendors.
 
 ---
 
@@ -28,7 +28,7 @@ Ideal if you already run an **AI proxy manager** or several OpenAI-compatible se
 
 ### 2. Deep Copilot integration (not chat-only)
 
-Inherited from upstream v0.6.2:
+Inherited from upstream v0.7.1:
 
 - **Agent mode** — edits, terminal, search, Git, tests, MCP, skills
 - **Tool calling** — full Copilot tool chain; **schema sanitization** for gateways like Kiro-go
@@ -103,7 +103,7 @@ Many extensions use the [Language Model Chat Provider API](https://code.visualst
 ## Marketplace one-liners (optional copy)
 
 1. **One `proxy_configs.json` → many Copilot Chat models** for LAN / self-hosted OpenAI-compatible proxies.  
-2. **Full Copilot agent stack**: tools, thinking modes, vision proxy — built on DeepSeek V4 v0.6.2.  
+2. **Full Copilot agent stack**: tools, thinking modes, vision proxy — built on DeepSeek V4 v0.7.1.  
 3. **LAN-friendly streaming**: SSE child-process bridge and proxy bypass for corporate networks.
 
 ---

@@ -10,7 +10,7 @@
 
 > 用 **一份 `proxy_configs.json`**，把多台 **OpenAI 兼容代理**（内网网关、自建服务、统一入口）映射成 Copilot Chat 模型选择器里的多个模型，并保留 **DeepSeek V4 for Copilot Chat** 级别的 Agent、工具与思考能力。
 
-技术基础：[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)（MIT）。Provider ID 为 `unified-proxy`，可与官方 DeepSeek V4 扩展（`deepseek`）**同时安装、互不覆盖**。
+技术基础：[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)（MIT）。Provider ID 为 `unified-proxy`，可与官方 DeepSeek V4 扩展（`deepseek`）**同时安装、互不覆盖**。
 
 ---
 
@@ -28,7 +28,7 @@
 
 ### 2. 继承 DeepSeek V4 的 Copilot 深度集成（不只是「能聊天」）
 
-基于上游 v0.6.2，保留并沿用其成熟能力：
+基于上游 v0.7.1，保留并沿用其成熟能力：
 
 - **Agent 模式**：文件编辑、终端、搜索、Git、测试、MCP、Skills 等
 - **工具调用**：完整 Copilot 工具链；并对 schema 做**规范化**，适配 Kiro-go 等自建网关
@@ -107,7 +107,7 @@
 ## Marketplace 一句话卖点（可参考）
 
 1. **One `proxy_configs.json` → many Copilot Chat models** for LAN / self-hosted OpenAI-compatible proxies.  
-2. **Full Copilot agent stack**: tools, thinking modes, vision proxy — built on DeepSeek V4 v0.6.2.  
+2. **Full Copilot agent stack**: tools, thinking modes, vision proxy — built on DeepSeek V4 v0.7.1.  
 3. **LAN-friendly streaming**: SSE child-process bridge and proxy bypass for corporate networks.
 
 ---

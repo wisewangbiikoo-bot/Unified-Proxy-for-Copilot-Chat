@@ -2,9 +2,9 @@
 
 **Use multiple OpenAI-compatible AI backends from the GitHub Copilot Chat model picker — driven by a single JSON config file.**
 
-This extension is based on **[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards (with upstream fixes through v0.7.1, incl. the `low` reasoning effort). It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing**.
+This extension is based on **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing**.
 
-> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.6.2** documentation.
+> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.7.1** documentation.
 
 简体中文完整说明见 [README.zh-cn.md](./README.zh-cn.md)（含 `proxy_configs.json` 配置章节，示例均使用占位符）。
 

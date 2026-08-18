@@ -2,9 +2,9 @@
 
 **在 GitHub Copilot Chat 的模型选择器中，通过配置文件切换多个 OpenAI 兼容后端。**
 
-本插件基于 **[DeepSeek V4 for Copilot Chat v0.6.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已后续移植 v0.5.3 ~ v0.7.1 多个上游修复（含 0.7.0/0.7.1 的 `low` 轻量推理档位）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 能力。
+本插件基于 **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植 v0.5.3 ~ v0.7.1 全部上游修复（含 0.7.0/0.7.1 的 `low` 轻量推理档位）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 能力。
 
-> 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.6.2** 官方文档与源码说明。
+> 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.7.1** 官方文档与源码说明。
 
 **本插件有什么优势？** 见 [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md)（定位、与同类扩展对比、适用场景）；英文版 [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md)。
 
@@ -12,7 +12,7 @@
 
 ## 与原版的关系
 
-| 项目 | DeepSeek V4 v0.6.2（原版） | Unified Proxy（本插件） |
+| 项目 | DeepSeek V4 v0.7.1（原版） | Unified Proxy（本插件） |
 |------|---------------------------|-------------------------|
 | 模型来源 | 固定 DeepSeek V4 Flash / Pro | `proxy_configs.json` 中每个键 = 一个模型 |
 | API 地址 | 设置项 `deepseek-copilot.baseUrl` | 每个代理的 `base_url` |
@@ -183,7 +183,7 @@
 | `unified-proxy-copilot.debugMode` | `minimal` | 诊断级别，行为同原版 |
 | `unified-proxy-copilot.experimental.stabilizeToolList` | `false` | 实验性稳定工具列表，参见原版说明 |
 
-更多设置项（视觉代理、调试 dump 等）请参阅 **DeepSeek V4 for Copilot Chat v0.6.2**。
+更多设置项（视觉代理、调试 dump 等）请参阅 **DeepSeek V4 for Copilot Chat v0.7.1**。
 
 ## 故障排查
 
@@ -204,5 +204,5 @@ code --install-extension unified-proxy-copilot-1.2.0.vsix
 
 ## 致谢与许可
 
-- 基于 [DeepSeek V4 for Copilot Chat](https://github.com/Vizards/deepseek-v4-for-copilot) v0.6.2
+- 基于 [DeepSeek V4 for Copilot Chat](https://github.com/Vizards/deepseek-v4-for-copilot) v0.7.1
 - 许可证：MIT（与原版相同）
