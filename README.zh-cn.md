@@ -2,7 +2,7 @@
 
 **在 GitHub Copilot Chat 的模型选择器中，通过配置文件切换多个 OpenAI 兼容后端。**
 
-本插件基于 **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植 v0.5.3 ~ v0.7.1 全部上游修复（含 0.7.0/0.7.1 的 `low` 轻量推理档位）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 能力。
+本插件基于 **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植上游常用修复（含 `low` 轻量推理、BYOK 标记、视觉代理等）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 与 **OpenCode Go `x-opencode-session`** 支持。
 
 > 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.7.1** 官方文档与源码说明。
 
@@ -19,6 +19,7 @@
 | API Key | SecretStorage 或设置 | 写在配置文件的 `api_key` |
 | 上下文 | 约 1M | 默认 128K，可 per-model 配置 |
 | 视觉代理 | 固定 VS Code LM | 可配置：VS Code LM / HTTP 端点（三种协议）|
+| OpenCode Go session | 上游尚无 | **v1.3.0 已支持** `x-opencode-session` |
 | 提供商 ID | `deepseek` | `unified-proxy`（可与原版并存） |
 
 ## 本插件新增 / 强化的功能
@@ -28,9 +29,10 @@
 3. **按模型可选参数**：图片支持（0/1/2 三档）、上下文窗口、最大输出、温度、思考模式默认值。
 4. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
 5. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
-6. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-7. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-8. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+6. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
+7. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+8. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+9. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
 
 ## 快速开始
 
@@ -91,6 +93,16 @@
 | `max_output_tokens` | 数字 | 不限制 | 省略或 `0` 时不向 API 传 `max_tokens` |
 | `temperature` | 数字 | `0.5` | 采样温度 |
 | `thinking_mode` | 字符串 | `停用` | 思考模式菜单默认值，见下表 |
+| `custom_headers` | 对象 | 无 | 额外 HTTP 头（会覆盖自动注入的同名头） |
+| `opencode_session` | 字符串 | 无 | 固定 OpenCode session；省略则用对话 segment id |
+
+**OpenCode Go（`https://opencode.ai/zen/go/v1`）**：v1.3.0 起默认 `openCodeSession=auto`，自动附加：
+
+- `x-opencode-session`：默认 `local-openai-forward-affinity-v1`（设置 `openCodeSessionId` 或条目 `opencode_session` 可改）
+- `x-opencode-client`: `unified-proxy-copilot`
+- `User-Agent`: `unified-proxy-copilot/<version>`
+
+无需改配置即可消除 `MissingSessionID`。若走自建反代再转发到 Go，可设 `openCodeSession=always`，或在反代侧透传/注入同名头。
 
 **`supports_images` 三种模式**：
 
@@ -180,6 +192,8 @@
 | 设置 | 默认 | 说明 |
 |------|------|------|
 | `unified-proxy-copilot.proxyConfigPath` | 空 | 自定义 `proxy_configs.json` 路径 |
+| `unified-proxy-copilot.openCodeSession` | `auto` | OpenCode Go 会话头开关：`auto` / `always` / `off` |
+| `unified-proxy-copilot.openCodeSessionId` | `local-openai-forward-affinity-v1` | `x-opencode-session` 的不透明值（可改） |
 | `unified-proxy-copilot.debugMode` | `minimal` | 诊断级别，行为同原版 |
 | `unified-proxy-copilot.experimental.stabilizeToolList` | `false` | 实验性稳定工具列表，参见原版说明 |
 

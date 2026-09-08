@@ -42,6 +42,18 @@
       "temperature": 0.5,
       "thinking_mode": "深度"
     },
+    "opencode-go-flash": {
+      "name": "OpenCode Go DeepSeek Flash",
+      "description": "OpenCode Go — auto x-opencode-session (v1.3.0+)",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "api_key": "YOUR_OPENCODE_GO_API_KEY",
+      "model_id": "deepseek-v4-flash",
+      "supports_images": 1,
+      "supports_tools": 1,
+      "context_window_size": "1M",
+      "temperature": 0.3,
+      "thinking_mode": "标准"
+    },
     "claude": {
       "name": "Claude",
       "description": "Claude via OpenAI-compatible proxy (example)",

@@ -3,7 +3,11 @@
 /**
  * Standalone SSE relay (separate Node process — not VS Code extension host).
  * Reads POST body from stdin; writes upstream SSE bytes to stdout.
- * Env: SSE_BRIDGE_URL (full URL), SSE_BRIDGE_AUTH (optional Bearer value)
+ * Env:
+ *   SSE_BRIDGE_URL     — full URL
+ *   SSE_BRIDGE_AUTH    — optional Bearer value
+ *   SSE_BRIDGE_HEADERS — optional JSON object of extra HTTP headers
+ *                        (e.g. x-opencode-session for OpenCode Go)
  */
 const http = require("http");
 const https = require("https");
@@ -69,6 +73,28 @@ function main() {
         };
         if (auth) {
             headers.Authorization = auth.startsWith("Bearer ") ? auth : `Bearer ${auth}`;
+        }
+        // Extra headers (OpenCode Go session affinity, custom_headers, User-Agent, …)
+        const rawExtra = process.env.SSE_BRIDGE_HEADERS || "";
+        if (rawExtra) {
+            try {
+                const extra = JSON.parse(rawExtra);
+                if (extra && typeof extra === "object" && !Array.isArray(extra)) {
+                    for (const [k, v] of Object.entries(extra)) {
+                        if (typeof k === "string" && k && typeof v === "string") {
+                            // Do not let extras clobber Content-Length / Content-Type
+                            const lower = k.toLowerCase();
+                            if (lower === "content-length" || lower === "content-type") {
+                                continue;
+                            }
+                            headers[k] = v;
+                        }
+                    }
+                }
+            }
+            catch (e) {
+                process.stderr.write(`SSE_BRIDGE_HEADERS parse error: ${e.message}\n`);
+            }
         }
         const req = transport.request(
             {

@@ -1,9 +1,9 @@
 {
 	"name": "unified-proxy-copilot",
 	"displayName": "Unified Proxy for Copilot Chat",
-	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.7.1.",
+	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.7.1; OpenCode Go x-opencode-session supported.",
 	"icon": "resources/icon.png",
-	"version": "1.2.3",
+	"version": "1.3.0",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {
@@ -128,6 +128,31 @@
 					"default": "",
 					"description": "Path to proxy_configs.json file. Defaults to ~/.vscode/proxy_configs.json if not specified. Used to dynamically load available AI backends."
 				},
+				"unified-proxy-copilot.openCodeSession": {
+					"type": "string",
+					"default": "auto",
+					"enum": [
+						"auto",
+						"always",
+						"off"
+					],
+					"enumItemLabels": [
+						"Auto (OpenCode Go)",
+						"Always",
+						"Off"
+					],
+					"markdownEnumDescriptions": [
+						"Inject `x-opencode-session` when `base_url` looks like OpenCode Go (`opencode.ai` / `/zen/go`).",
+						"Always inject session / client / User-Agent headers on every backend.",
+						"Never auto-inject (you can still set `custom_headers` in proxy_configs.json)."
+					],
+					"markdownDescription": "Whether to auto-inject OpenCode Go affinity headers (`x-opencode-session`, `x-opencode-client`, `User-Agent`). Override per proxy with `opencode_session` or `custom_headers`."
+				},
+				"unified-proxy-copilot.openCodeSessionId": {
+					"type": "string",
+					"default": "local-openai-forward-affinity-v1",
+					"markdownDescription": "Opaque value for the `x-opencode-session` header (any stable string). Default matches `local_openai_forward`. Per-proxy override: `opencode_session` in `proxy_configs.json`."
+				},
 				"unified-proxy-copilot.debugMode": {
 					"type": "string",
 					"default": "minimal",
@@ -170,10 +195,5 @@
 		"oxfmt": "^0.47.0",
 		"oxlint": "^1.62.0",
 		"typescript": "^6.0.3"
-	},
-	"__metadata": {
-		"installedTimestamp": 1779147667913,
-		"targetPlatform": "undefined",
-		"size": 372755
 	}
 }

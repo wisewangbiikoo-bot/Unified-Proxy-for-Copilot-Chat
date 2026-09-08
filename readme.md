@@ -2,7 +2,7 @@
 
 **Use multiple OpenAI-compatible AI backends from the GitHub Copilot Chat model picker — driven by a single JSON config file.**
 
-This extension is based on **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing**.
+This extension is based on **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing** plus **OpenCode Go `x-opencode-session` support**.
 
 > For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.7.1** documentation.
 
@@ -22,6 +22,7 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.7.1](https://githu
 - SSE child-process bridge with LAN / `NO_PROXY` handling
 - Thinking menu: **Off / Low / Standard / Deep** (same as DeepSeek V4)
 - Deduplicated streaming usage reports (v1.2.0) — prevents inflated token counts
+- **OpenCode Go session affinity** (v1.3.0) — auto `x-opencode-session` / `x-opencode-client` / `User-Agent` for `opencode.ai` backends
 
 ## Quick start
 

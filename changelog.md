@@ -2,6 +2,28 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.0] — 2026-09-08
+
+### Added
+
+* **OpenCode Go `x-opencode-session`** — auto-injects affinity headers required by
+  Console Go (fixes `MissingSessionID` / HTTP 400). Same approach as
+  `local_openai_forward.py`.
+  * Default session value: `local-openai-forward-affinity-v1` (setting
+    `unified-proxy-copilot.openCodeSessionId`, or per-proxy `opencode_session` /
+    `custom_headers`)
+  * Also sends `x-opencode-client` + `User-Agent: unified-proxy-copilot/<version>`
+  * Mode setting `unified-proxy-copilot.openCodeSession`: `auto` / `always` / `off`
+  * Vision endpoint proxies to OpenCode Go get the same headers
+* **`custom_headers` on main proxy entries** — optional extra HTTP headers for
+  chat completions (previously only on `vision_proxy`)
+* **SSE bridge `SSE_BRIDGE_HEADERS`** — child process forwards JSON extra headers
+
+### Notes
+
+* Upstream baseline remains **DeepSeek V4 for Copilot Chat v0.7.1**. OpenCode Go
+  session support is additive (not present in upstream 0.7.1 / 0.8.2 yet).
+
 ## [1.2.3] — 2026-08-18
 
 ### Added

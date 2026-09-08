@@ -60,6 +60,8 @@ function buildModelFromProxy(key, proxy) {
             maxOutputTokens: options.maxOutputTokens,
             temperature: options.temperature,
             thinkingMode: options.thinkingMode,
+            customHeaders: options.customHeaders,
+            openCodeSession: options.openCodeSession,
         },
     };
 }
@@ -108,6 +110,8 @@ function getProxyConfig(modelId) {
             maxOutputTokens: options.maxOutputTokens,
             temperature: options.temperature,
             thinkingMode: options.thinkingMode,
+            customHeaders: options.customHeaders,
+            openCodeSession: options.openCodeSession,
         };
     }
     catch {

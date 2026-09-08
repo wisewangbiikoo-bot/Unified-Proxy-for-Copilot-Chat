@@ -55,9 +55,18 @@ function resanitizeToolsInRequest(body) {
 class DeepSeekClient {
     baseUrl;
     apiKey;
-    constructor(baseUrl, apiKey) {
+    /** @type {Record<string, string>} */
+    extraHeaders;
+    /**
+     * @param {string} baseUrl
+     * @param {string} apiKey
+     * @param {Record<string, string>|null|undefined} [extraHeaders]
+     */
+    constructor(baseUrl, apiKey, extraHeaders) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
+        this.extraHeaders =
+            extraHeaders && typeof extraHeaders === "object" ? { ...extraHeaders } : {};
     }
     async streamChatCompletion(request, callbacks, cancellationToken) {
         (0, no_proxy_1.applyNoProxyBypass)();
@@ -229,12 +238,17 @@ class DeepSeekClient {
             let finished = false;
             let stdoutBytes = 0;
             const directEnv = (0, no_proxy_1.getDirectConnectEnv)(url);
+            const headerEnv =
+                this.extraHeaders && Object.keys(this.extraHeaders).length > 0
+                    ? JSON.stringify(this.extraHeaders)
+                    : "";
             const child = spawn(process.execPath, [SSE_BRIDGE_SCRIPT], {
                 env: {
                     ...process.env,
                     ...directEnv,
                     SSE_BRIDGE_URL: url,
                     SSE_BRIDGE_AUTH: this.apiKey,
+                    ...(headerEnv ? { SSE_BRIDGE_HEADERS: headerEnv } : {}),
                 },
                 stdio: ["pipe", "pipe", "pipe"],
                 windowsHide: true,
@@ -292,6 +306,8 @@ class DeepSeekClient {
                         hint = " DNS resolution failed. Check the hostname in base_url.";
                     } else if (detail.includes("401") || detail.includes("403")) {
                         hint = " Authentication failed. Check api_key.";
+                    } else if (detail.includes("MissingSessionID") || detail.includes("x-opencode-session")) {
+                        hint = " OpenCode Go requires x-opencode-session. Upgrade Unified Proxy to 1.3.0+, or set custom_headers.x-opencode-session / unified-proxy-copilot.openCodeSession.";
                     }
                     logger_1.logger.error(`SSE bridge exit ${code} for ${url.slice(0, 80)}: ${detail.slice(0, 200)}${hint}`);
                     reject(new Error(`SSE bridge exit ${code}: ${detail}${hint}`));

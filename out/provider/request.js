@@ -4,6 +4,7 @@ exports.prepareChatRequest = prepareChatRequest;
 const client_1 = require("../client");
 const consts_1 = require("../consts");
 const i18n_1 = require("../i18n");
+const opencode_headers_1 = require("../opencode_headers");
 const proxy_config_parse_1 = require("../proxy_config_parse");
 const convert_1 = require("./convert");
 const dump_1 = require("./dump");
@@ -50,7 +51,12 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     const baseUrl = proxyConfig.baseUrl;
     const actualApiKey = proxyConfig.apiKey;
     const actualModelId = proxyConfig.modelId;
-    const client = new client_1.DeepSeekClient(baseUrl, actualApiKey);
+    const extraHeaders = (0, opencode_headers_1.buildUpstreamHeaders)({
+        baseUrl,
+        customHeaders: proxyConfig.customHeaders,
+        sessionOverride: proxyConfig.openCodeSession,
+    });
+    const client = new client_1.DeepSeekClient(baseUrl, actualApiKey, extraHeaders);
     const modelDef = consts_1.MODELS.find((m) => m.id === modelInfo.id);
     const isThinkingModel = modelDef?.capabilities.thinking ?? false;
     const thinkingEffort = (0, models_1.getConfiguredThinkingEffort)(options, proxyConfig?.thinkingMode);
@@ -61,8 +67,12 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     //   1 = legacy vision-proxy: describe image as text, then send text-only
     //   2 = native multimodal: OpenAI image_url to backend (e.g. LM Studio)
     const imageMode = normalizeImageMode(proxyConfig?.supportsImages);
+    const visionProxy = (0, opencode_headers_1.enrichVisionProxyWithOpenCodeHeaders)(
+        proxyConfig?.visionProxy,
+        proxyConfig.openCodeSession,
+    );
     const visionResolution = imageMode === 1
-        ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel, proxyConfig?.visionProxy)
+        ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel, visionProxy)
         : emptyVisionResolution(messages);
     const resolvedMessages = visionResolution.messages;
     const deepseekMessages = (0, convert_1.convertMessages)(resolvedMessages, isThinkingModel, {

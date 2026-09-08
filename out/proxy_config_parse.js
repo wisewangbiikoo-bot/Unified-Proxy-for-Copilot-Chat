@@ -48,6 +48,8 @@ function parseProxyEntry(proxy) {
         temperature: parseTemperature(proxy),
         thinkingMode: parseThinkingMode(proxy),
         visionProxy: parseVisionProxyConfig(proxy),
+        customHeaders: parseCustomHeaders(proxy),
+        openCodeSession: parseOpenCodeSessionOverride(proxy),
     };
 }
 function parseSupportsTools(proxy) {
@@ -213,19 +215,47 @@ function parseVisionProxyConfig(proxy) {
     const baseUrl = parseStringField(raw, "base_url") || parseStringField(raw, "baseUrl") || "";
     const apiKey = parseStringField(raw, "api_key") || parseStringField(raw, "apiKey") || "";
     const modelId = parseStringField(raw, "model_id") || parseStringField(raw, "modelId") || "";
-    let customHeaders = null;
-    if (raw.custom_headers && typeof raw.custom_headers === "object") {
-        customHeaders = {};
-        for (const [k, v] of Object.entries(raw.custom_headers)) {
-            if (typeof v === "string") {
-                customHeaders[k] = v;
-            }
-        }
-    }
+    let customHeaders = parseCustomHeaders(raw);
     if (!baseUrl) {
         return null;
     }
     return { type: "endpoint", protocol, baseUrl, apiKey, modelId, customHeaders };
+}
+
+/**
+ * Parse optional custom_headers / headers object from a proxy or vision_proxy entry.
+ * @returns {Record<string,string>|null}
+ */
+function parseCustomHeaders(raw) {
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+    const src = raw.custom_headers ?? raw.customHeaders ?? raw.headers;
+    if (!src || typeof src !== "object" || Array.isArray(src)) {
+        return null;
+    }
+    const customHeaders = {};
+    for (const [k, v] of Object.entries(src)) {
+        if (typeof v === "string" && k) {
+            customHeaders[k] = v;
+        }
+    }
+    return Object.keys(customHeaders).length > 0 ? customHeaders : null;
+}
+
+/**
+ * Optional fixed OpenCode session string on a proxy entry
+ * (`opencode_session` / `openCodeSession`). Empty = use conversation segment.
+ */
+function parseOpenCodeSessionOverride(proxy) {
+    const raw =
+        proxy.opencode_session ??
+        proxy.openCodeSession ??
+        proxy["opencode-session"];
+    if (raw === undefined || raw === null || raw === "") {
+        return "";
+    }
+    return String(raw).trim();
 }
 
 function parseStringField(obj, key, fallback) {
