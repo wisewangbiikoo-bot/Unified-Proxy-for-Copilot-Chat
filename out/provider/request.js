@@ -134,5 +134,6 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
         segment,
         replayMarkerMetadata: visionResolution.replayMarkerMetadata,
         visionMarkerTextChars: visionResolution.stats.markerVisionTextChars || undefined,
+        initialResponseNotice: visionResolution.initialResponseNotice,
     };
 }

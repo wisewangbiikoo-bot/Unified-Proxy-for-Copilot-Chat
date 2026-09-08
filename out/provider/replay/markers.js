@@ -33,11 +33,12 @@ function parseReplayMarkerPart(part) {
     return parseReplayMarkerData(part.data);
 }
 function hasReplayMarkerMetadata(metadata) {
-    return Boolean(metadata.visionText || metadata.reasoningText);
+    return Boolean(metadata.visionText || metadata.reasoningText || metadata.toolVision?.length);
 }
 function createReplayMarkerPart(metadata) {
     const payload = encodeReplayMarkerJson({
         ...createVisionMarkerPayload(metadata.visionText),
+        ...(metadata.toolVision?.length ? { toolVision: { results: metadata.toolVision } } : {}),
         ...createReasoningMarkerPayload(metadata.reasoningText),
     });
     return new vscode_1.default.LanguageModelDataPart(new TextEncoder().encode(`${consts_1.REPLAY_MARKER_WRITER_ID}\\${payload}`), consts_1.REPLAY_MARKER_MIME);
@@ -76,13 +77,16 @@ function parseReplayMarkerData(data) {
             return { valid: false, error: segmentId.error };
         }
         const vision = parseVisionMarkerMetadata(value);
+        const toolVision = parseToolVisionMarkerMetadata(value);
         const reasoning = parseReasoningMarkerMetadata(value);
+        const hasMetadata = vision.visionText || toolVision?.length || reasoning.reasoningText;
         return {
             valid: true,
             segmentId: segmentId.value,
             ...vision,
+            ...(toolVision ? { toolVision } : {}),
             ...reasoning,
-            legacySegmentOnly: Boolean(segmentId.value && !vision.visionText && !reasoning.reasoningText),
+            legacySegmentOnly: Boolean(segmentId.value && !hasMetadata),
             payloadFormat: decodedPayload.format,
         };
     }
@@ -122,6 +126,22 @@ function parseVisionMarkerMetadata(value) {
         return { visionTextIgnoredReason: 'vision-text-empty' };
     }
     return { visionText: text };
+}
+function parseToolVisionMarkerMetadata(value) {
+    const results = value.toolVision?.results;
+    const entries = Array.isArray(results) ? results.filter(isToolVisionReplayEntry) : [];
+    return entries.length > 0 ? entries : undefined;
+}
+function isToolVisionReplayEntry(value) {
+    const entry = value;
+    return Boolean(entry &&
+        typeof entry.callId === 'string' &&
+        entry.callId.length > 0 &&
+        typeof entry.resolvedContent === 'string' &&
+        entry.resolvedContent.length > 0 &&
+        typeof entry.imageParts === 'number' &&
+        Number.isSafeInteger(entry.imageParts) &&
+        entry.imageParts > 0);
 }
 function createReasoningMarkerPayload(reasoningText) {
     return reasoningText ? { reasoning: { text: reasoningText } } : {};

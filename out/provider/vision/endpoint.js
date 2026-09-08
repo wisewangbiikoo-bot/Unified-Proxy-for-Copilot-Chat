@@ -13,7 +13,17 @@ exports.describeImageViaEndpoint = describeImageViaEndpoint;
 const http = require("http");
 const https = require("https");
 const VISION_PROMPT = "Describe all image attachments in this message. Return one concise factual description suitable for inserting into a text-only chat prompt. Include visible text, objects, UI elements, people, and relevant context. Do not invent details.";
-const ENDPOINT_TIMEOUT = 60000;
+const DEFAULT_ENDPOINT_TIMEOUT_MS = 60000;
+const MAX_ENDPOINT_TIMEOUT_MS = 300000;
+
+function resolveTimeoutMs(visionConfig) {
+    const raw = visionConfig?.timeoutMs ?? visionConfig?.timeout_ms;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+        return DEFAULT_ENDPOINT_TIMEOUT_MS;
+    }
+    return Math.min(MAX_ENDPOINT_TIMEOUT_MS, Math.floor(n));
+}
 
 /**
  * Describe image data via a configured API endpoint.
@@ -29,14 +39,15 @@ async function describeImageViaEndpoint(imageDataArray, mimeTypes, visionConfig)
     }
     const targetModel = modelId || "gpt-4o";
     const url = buildEndpointUrl(baseUrl, protocol);
+    const timeoutMs = resolveTimeoutMs(visionConfig);
 
     switch (protocol) {
         case "openai-chat":
-            return doOpenAIChat(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders);
+            return doOpenAIChat(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders, timeoutMs);
         case "openai-responses":
-            return doOpenAIResponses(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders);
+            return doOpenAIResponses(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders, timeoutMs);
         case "anthropic-messages":
-            return doAnthropicMessages(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders);
+            return doAnthropicMessages(url, apiKey, targetModel, imageDataArray, mimeTypes, customHeaders, timeoutMs);
         default:
             throw new Error(`Unsupported vision proxy protocol: ${protocol}`);
     }
@@ -85,7 +96,7 @@ function bufferToBase64(data) {
     return btoa(binary);
 }
 
-function buildRequestOptions(url, apiKey, customHeaders, bodyBytes) {
+function buildRequestOptions(url, apiKey, customHeaders, bodyBytes, timeoutMs) {
     const parsed = new URL(url);
     const isHttps = parsed.protocol === "https:";
     const headers = {
@@ -107,7 +118,7 @@ function buildRequestOptions(url, apiKey, customHeaders, bodyBytes) {
         path: parsed.pathname + parsed.search,
         method: "POST",
         headers,
-        timeout: ENDPOINT_TIMEOUT,
+        timeout: timeoutMs || DEFAULT_ENDPOINT_TIMEOUT_MS,
         family: 4,
     };
 }
@@ -139,7 +150,7 @@ function httpRequest(options, bodyBytes) {
     });
 }
 
-async function doOpenAIChat(url, apiKey, model, imageDataArray, mimeTypes, customHeaders) {
+async function doOpenAIChat(url, apiKey, model, imageDataArray, mimeTypes, customHeaders, timeoutMs) {
     const imageContent = buildImageContent(imageDataArray, mimeTypes);
     const body = JSON.stringify({
         model,
@@ -155,19 +166,19 @@ async function doOpenAIChat(url, apiKey, model, imageDataArray, mimeTypes, custo
         max_tokens: 4096,
         stream: false,
     });
-    const options = buildRequestOptions(url, apiKey, customHeaders, Buffer.from(body, "utf8"));
+    const options = buildRequestOptions(url, apiKey, customHeaders, Buffer.from(body, "utf8"), timeoutMs);
     const raw = await httpRequest(options, Buffer.from(body, "utf8"));
     const parsed = JSON.parse(raw);
     const text = parsed.choices?.[0]?.message?.content || "";
     return text.trim();
 }
 
-async function doOpenAIResponses(url, apiKey, model, imageDataArray, mimeTypes, customHeaders) {
+async function doOpenAIResponses(url, apiKey, model, imageDataArray, mimeTypes, customHeaders, timeoutMs) {
     // OpenAI Responses API: https://platform.openai.com/docs/api-reference/responses
     const imageContent = buildImageContent(imageDataArray, mimeTypes);
     const input = [{ role: "user", content: [{ type: "input_text", text: VISION_PROMPT }, ...imageContent] }];
     const body = JSON.stringify({ model, input, max_output_tokens: 4096 });
-    const options = buildRequestOptions(url, apiKey, customHeaders, Buffer.from(body, "utf8"));
+    const options = buildRequestOptions(url, apiKey, customHeaders, Buffer.from(body, "utf8"), timeoutMs);
     const raw = await httpRequest(options, Buffer.from(body, "utf8"));
     const parsed = JSON.parse(raw);
     // Responses API output format
@@ -188,7 +199,7 @@ async function doOpenAIResponses(url, apiKey, model, imageDataArray, mimeTypes, 
     return text.trim();
 }
 
-async function doAnthropicMessages(url, apiKey, model, imageDataArray, mimeTypes, customHeaders) {
+async function doAnthropicMessages(url, apiKey, model, imageDataArray, mimeTypes, customHeaders, timeoutMs) {
     // Anthropic Messages API: https://docs.anthropic.com/en/api/messages
     const content = [{ type: "text", text: VISION_PROMPT }];
     for (let i = 0; i < imageDataArray.length; i++) {
@@ -227,7 +238,7 @@ async function doAnthropicMessages(url, apiKey, model, imageDataArray, mimeTypes
         path: parsed.pathname + parsed.search,
         method: "POST",
         headers,
-        timeout: ENDPOINT_TIMEOUT,
+        timeout: timeoutMs || DEFAULT_ENDPOINT_TIMEOUT_MS,
         family: 4,
     };
     const raw = await httpRequest(options, Buffer.from(body, "utf8"));

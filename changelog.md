@@ -2,6 +2,22 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.1] — 2026-09-08
+
+### Added
+
+* **Align with DeepSeek V4 for Copilot Chat v0.8.2 vision stack**
+  * Tool-result images described via vision proxy (`supports_images=1`) — upstream #260
+  * Shared lazy vision description session for user-tail + tool images — upstream #261
+  * Replay marker `toolVision` so follow-up turns reuse descriptions
+  * Native multimodal path (`supports_images=2`) forwards tool-result images as `image_url`
+  * `vision_proxy.timeout_ms` configurable endpoint timeout — upstream 0.8.1 #203
+
+### Changed
+
+* Upstream baseline reference: **DeepSeek V4 for Copilot Chat v0.7.1 → v0.8.2**
+* Skipped DeepSeek-only pieces (fixed Flash Vision Exp catalog, picker pricing UI)
+
 ## [1.3.0] — 2026-09-08
 
 ### Added

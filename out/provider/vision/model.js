@@ -7,6 +7,7 @@ exports.createVisionModelGetter = createVisionModelGetter;
 exports.setVisionProxyModel = setVisionProxyModel;
 exports.getVisionPrompt = getVisionPrompt;
 exports.describeViaEndpoint = describeViaEndpoint;
+exports.createVisionDescriber = createVisionDescriber;
 const vscode_1 = __importDefault(require("vscode"));
 const i18n_1 = require("../../i18n");
 const logger_1 = require("../../logger");
@@ -131,5 +132,50 @@ async function describeViaEndpoint(imageParts, visionProxyConfig, token) {
     logger.info(`Vision proxy via endpoint: ${visionProxyConfig.protocol} ${visionProxyConfig.baseUrl}`);
     const description = await (0, endpoint_1.describeImageViaEndpoint)(imageDataArray, mimeTypes, visionProxyConfig);
     return description;
+}
+
+/**
+ * Build a DeepSeek-0.8.2-style describer facade over VS Code LM or endpoint vision_proxy.
+ * @returns {Promise<{ id: string, source: string, describe: Function }|undefined>}
+ */
+async function createVisionDescriber(getModel, visionProxyConfig, token) {
+    if (visionProxyConfig?.type === "endpoint" && visionProxyConfig.baseUrl) {
+        return {
+            id: visionProxyConfig.modelId || "vision-endpoint",
+            source: "api-endpoint",
+            async describe({ images, token: describeToken }) {
+                const parts = images.map((img) => ({
+                    data: img.data,
+                    mimeType: img.mimeType || "image/png",
+                }));
+                return describeViaEndpoint(parts, visionProxyConfig, describeToken || token);
+            },
+        };
+    }
+    const visionModel = await getModel();
+    if (!visionModel) {
+        return undefined;
+    }
+    return {
+        id: visionModel.id,
+        source: "vscode-lm",
+        async describe({ prompt, images, token: describeToken }) {
+            const dataParts = images.map(
+                (img) => new vscode_1.default.LanguageModelDataPart(img.data, img.mimeType || "image/png"),
+            );
+            const visionMsg = vscode_1.default.LanguageModelChatMessage.User([
+                ...dataParts,
+                new vscode_1.default.LanguageModelTextPart(prompt || getVisionPrompt()),
+            ]);
+            const response = await visionModel.sendRequest([visionMsg], {}, describeToken || token);
+            let description = "";
+            for await (const chunk of response.stream) {
+                if (chunk instanceof vscode_1.default.LanguageModelTextPart) {
+                    description += chunk.value;
+                }
+            }
+            return description.trim();
+        },
+    };
 }
 //# sourceMappingURL=model.js.map

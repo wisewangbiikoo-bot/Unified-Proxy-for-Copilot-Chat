@@ -2,9 +2,9 @@
 
 **在 GitHub Copilot Chat 的模型选择器中，通过配置文件切换多个 OpenAI 兼容后端。**
 
-本插件基于 **[DeepSeek V4 for Copilot Chat v0.7.1](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植上游常用修复（含 `low` 轻量推理、BYOK 标记、视觉代理等）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 与 **OpenCode Go `x-opencode-session`** 支持。
+本插件基于 **[DeepSeek V4 for Copilot Chat v0.8.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植上游 vision 相关能力（含 tool-result 图片、描述 session、vision timeout）及 `low` 轻量推理、BYOK 等。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 与 **OpenCode Go `x-opencode-session`** 支持。
 
-> 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.7.1** 官方文档与源码说明。
+> 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.8.2** 官方文档与源码说明。
 
 **本插件有什么优势？** 见 [docs/WHY_UNIFIED_PROXY.zh-cn.md](./docs/WHY_UNIFIED_PROXY.zh-cn.md)（定位、与同类扩展对比、适用场景）；英文版 [docs/WHY_UNIFIED_PROXY.md](./docs/WHY_UNIFIED_PROXY.md)。
 
@@ -12,14 +12,14 @@
 
 ## 与原版的关系
 
-| 项目 | DeepSeek V4 v0.7.1（原版） | Unified Proxy（本插件） |
+| 项目 | DeepSeek V4 v0.8.2（原版） | Unified Proxy（本插件） |
 |------|---------------------------|-------------------------|
-| 模型来源 | 固定 DeepSeek V4 Flash / Pro | `proxy_configs.json` 中每个键 = 一个模型 |
+| 模型来源 | 固定 DeepSeek V4 Flash / Pro / Vision Exp | `proxy_configs.json` 中每个键 = 一个模型 |
 | API 地址 | 设置项 `deepseek-copilot.baseUrl` | 每个代理的 `base_url` |
 | API Key | SecretStorage 或设置 | 写在配置文件的 `api_key` |
 | 上下文 | 约 1M | 默认 128K，可 per-model 配置 |
-| 视觉代理 | 固定 VS Code LM | 可配置：VS Code LM / HTTP 端点（三种协议）|
-| OpenCode Go session | 上游尚无 | **v1.3.0 已支持** `x-opencode-session` |
+| 视觉代理 | VS Code LM / Vision Proxy；支持 tool-result 图 | 同：VS Code LM / HTTP 端点；v1.3.1 起支持 tool-result 图 |
+| OpenCode Go session | 上游 [#264](https://github.com/Vizards/deepseek-v4-for-copilot/issues/264) 待合并 | **v1.3.0 已支持** `x-opencode-session` |
 | 提供商 ID | `deepseek` | `unified-proxy`（可与原版并存） |
 
 ## 本插件新增 / 强化的功能
@@ -30,9 +30,10 @@
 4. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
 5. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
 6. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
-7. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-8. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-9. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+7. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
+8. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+9. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+10. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
 
 ## 快速开始
 
@@ -124,6 +125,7 @@
 | `api_key` | 字符串 | 否 | 视觉 API 的 Bearer Token |
 | `model_id` | 字符串 | 否 | 视觉模型 ID，如 `gemini-2.5-flash-lite` |
 | `custom_headers` | 对象 | 否 | 自定义 HTTP 头，如 `{ "HTTP-Referer": "http://localhost" }` |
+| `timeout_ms` | 数字 | 否 | 视觉端点超时（毫秒），默认 60000；对齐上游 0.8.1 |
 
 示例：
 ```json
@@ -197,7 +199,7 @@
 | `unified-proxy-copilot.debugMode` | `minimal` | 诊断级别，行为同原版 |
 | `unified-proxy-copilot.experimental.stabilizeToolList` | `false` | 实验性稳定工具列表，参见原版说明 |
 
-更多设置项（视觉代理、调试 dump 等）请参阅 **DeepSeek V4 for Copilot Chat v0.7.1**。
+更多设置项（视觉代理、调试 dump 等）请参阅 **DeepSeek V4 for Copilot Chat v0.8.2**。
 
 ## 故障排查
 
@@ -218,5 +220,5 @@ code --install-extension unified-proxy-copilot-1.2.0.vsix
 
 ## 致谢与许可
 
-- 基于 [DeepSeek V4 for Copilot Chat](https://github.com/Vizards/deepseek-v4-for-copilot) v0.7.1
+- 基于 [DeepSeek V4 for Copilot Chat](https://github.com/Vizards/deepseek-v4-for-copilot) v0.8.2
 - 许可证：MIT（与原版相同）

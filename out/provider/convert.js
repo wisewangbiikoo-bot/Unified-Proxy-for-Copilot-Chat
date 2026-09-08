@@ -49,16 +49,7 @@ function convertMessages(messages, isThinkingModel, options = {}) {
                 });
             }
             else if (part instanceof vscode_1.default.LanguageModelToolResultPart) {
-                let toolContent = "";
-                for (const item of part.content) {
-                    if (item instanceof vscode_1.default.LanguageModelTextPart) {
-                        toolContent += item.value;
-                    }
-                }
-                toolResults.push({
-                    callId: part.callId,
-                    content: toolContent || (0, json_1.safeStringify)(part.content),
-                });
+                toolResults.push(convertToolResultPart(part, passNativeImages));
             }
         }
         if (role === "assistant") {
@@ -113,6 +104,49 @@ function isImageDataPart(part) {
     return (part instanceof vscode_1.default.LanguageModelDataPart &&
         typeof part.mimeType === "string" &&
         part.mimeType.startsWith("image/"));
+}
+/**
+ * Convert tool-result content. With passNativeImages (supports_images=2),
+ * image DataParts become multimodal content (DeepSeek 0.8.2 #260 native route).
+ */
+function convertToolResultPart(part, passNativeImages) {
+    if (!passNativeImages) {
+        let toolContent = "";
+        for (const item of part.content) {
+            if (item instanceof vscode_1.default.LanguageModelTextPart) {
+                toolContent += item.value;
+            }
+        }
+        return {
+            callId: part.callId,
+            content: toolContent || (0, json_1.safeStringify)(part.content),
+        };
+    }
+    const multimodal = [];
+    let textOnly = "";
+    let hasImage = false;
+    for (const item of part.content) {
+        if (item instanceof vscode_1.default.LanguageModelTextPart) {
+            textOnly += item.value;
+            if (item.value) {
+                multimodal.push({ type: "text", text: item.value });
+            }
+        }
+        else if (isImageDataPart(item)) {
+            hasImage = true;
+            multimodal.push(dataPartToImageUrlContent(item));
+        }
+    }
+    if (!hasImage) {
+        return {
+            callId: part.callId,
+            content: textOnly || (0, json_1.safeStringify)(part.content),
+        };
+    }
+    return {
+        callId: part.callId,
+        content: multimodal.length > 0 ? multimodal : textOnly,
+    };
 }
 function dataPartToImageUrlContent(part) {
     const mime = part.mimeType || "image/png";

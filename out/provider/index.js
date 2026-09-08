@@ -149,7 +149,7 @@ class DeepSeekChatProvider {
             prepared,
             progress,
             token,
-            initialResponseNotice: toolFlow.initialResponseNotice,
+            initialResponseNotice: toolFlow.initialResponseNotice || prepared.initialResponseNotice,
             getCharsPerToken: () => this.charsPerToken,
             setCharsPerToken: (charsPerToken) => {
                 this.charsPerToken = charsPerToken;

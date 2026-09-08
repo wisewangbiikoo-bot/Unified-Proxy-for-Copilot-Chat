@@ -208,7 +208,7 @@ function parseVisionProxyConfig(proxy) {
     if (type === "vscode-lm") {
         // type=vscode-lm means use VS Code LM API (existing behavior).
         // No extra fields needed; model selection via settings or default.
-        return { type: "vscode-lm", protocol: null, baseUrl: null, apiKey: null, modelId: null, customHeaders: null };
+        return { type: "vscode-lm", protocol: null, baseUrl: null, apiKey: null, modelId: null, customHeaders: null, timeoutMs: null };
     }
     // type=endpoint
     const protocol = parseStringField(raw, "protocol", "openai-chat").toLowerCase();
@@ -216,10 +216,11 @@ function parseVisionProxyConfig(proxy) {
     const apiKey = parseStringField(raw, "api_key") || parseStringField(raw, "apiKey") || "";
     const modelId = parseStringField(raw, "model_id") || parseStringField(raw, "modelId") || "";
     let customHeaders = parseCustomHeaders(raw);
+    const timeoutMs = parseTimeoutMs(raw);
     if (!baseUrl) {
         return null;
     }
-    return { type: "endpoint", protocol, baseUrl, apiKey, modelId, customHeaders };
+    return { type: "endpoint", protocol, baseUrl, apiKey, modelId, customHeaders, timeoutMs };
 }
 
 /**
@@ -256,6 +257,18 @@ function parseOpenCodeSessionOverride(proxy) {
         return "";
     }
     return String(raw).trim();
+}
+
+function parseTimeoutMs(raw) {
+    const v = raw.timeout_ms ?? raw.timeoutMs ?? raw.timeout;
+    if (v === undefined || v === null || v === "") {
+        return undefined;
+    }
+    const n = typeof v === "number" ? v : Number(String(v).trim());
+    if (!Number.isFinite(n) || n <= 0) {
+        return undefined;
+    }
+    return Math.floor(n);
 }
 
 function parseStringField(obj, key, fallback) {
