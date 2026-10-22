@@ -1,21 +1,16 @@
 # Sync .github/repository-topics.txt → GitHub repo Topics (About section).
-# Requires: repo or account "Workflow permissions" = Read and write
-# (see docs/GITHUB_TOPICS_SETUP.zh-cn.md).
-# Manual fallback: About → ⚙ → Topics (always works).
 #
-# IMPORTANT: Do not use invalid permission keys (e.g. `metadata: write`).
-# GitHub silently schedules zero jobs and marks the run as failure
-# ("No jobs were run"), which emails watchers on every push.
+# NOTE: Default GITHUB_TOKEN cannot call PUT /repos/{repo}/topics
+# (HTTP 403 "Resource not accessible by integration"). Prefer:
+#   - Manual: About → ⚙ → Topics
+#   - Local:  gh api --method PUT /repos/OWNER/REPO/topics -f names[]=...
+# This workflow is workflow_dispatch-only so ordinary pushes do not email
+# "Run failed". If you re-enable push, keep the 403 soft-exit below.
 
 name: Sync repository topics
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/repository-topics.txt
-      - .github/workflows/sync-topics.yml
 
 permissions:
   contents: read
@@ -49,5 +44,10 @@ jobs:
             exit 1
           fi
           echo "Setting ${count} topic(s)..."
-          gh api --method PUT "/repos/${GITHUB_REPOSITORY}/topics" -H "Accept: application/vnd.github+json" "${args[@]}"
-          echo "Done. Verify at: https://github.com/${GITHUB_REPOSITORY}/topics"
+          if gh api --method PUT "/repos/${GITHUB_REPOSITORY}/topics" \
+              -H "Accept: application/vnd.github+json" "${args[@]}"; then
+            echo "Done. Verify at: https://github.com/${GITHUB_REPOSITORY}/topics"
+          else
+            echo "::warning::GITHUB_TOKEN cannot update topics (expected 403). Set topics via the About UI or a PAT with admin scope. See docs/GITHUB_TOPICS_SETUP.zh-cn.md"
+            exit 0
+          fi

@@ -57,12 +57,19 @@ vscode-extension github-copilot copilot-chat openai-compatible unified-proxy dee
 
 ## 想要更多标签？
 
-网页输入框放不下时，可依赖 **Actions** 写入最多 20 个（不受「一行 50 字」限制）：
+网页输入框放不下时，用本机 `gh`（需对仓库有 admin）按 [`.github/repository-topics.txt`](../.github/repository-topics.txt) 写入，最多 20 个：
 
-1. 账号 https://github.com/settings/actions → **Read and write permissions**
-2. 运行 https://github.com/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/actions/workflows/sync-topics.yml → **Run workflow**
+```bash
+# 在仓库根目录；需已 gh auth login
+mapfile -t names < <(grep -E '^[a-z0-9]' .github/repository-topics.txt | head -20)
+args=(); for t in "${names[@]}"; do args+=(-f "names[]=$t"); done
+gh api --method PUT "/repos/wisewangbiikoo-bot/Unified-Proxy-for-Copilot-Chat/topics" \
+  -H "Accept: application/vnd.github+json" "${args[@]}"
+```
 
-列表见 [`.github/repository-topics.txt`](../.github/repository-topics.txt)。
+> **Actions 说明**：`.github/workflows/sync-topics.yml` 仅保留手动 `workflow_dispatch`。  
+> 默认 `GITHUB_TOKEN` **不能**调用 topics API（HTTP 403），以前挂在 `push` 上会每次 push 都发「Run failed / No jobs were run」邮件。  
+> 若要用 Actions，需自备带 admin 的 PAT 并改 workflow；日常请用网页或上面的 `gh`。
 
 ---
 
