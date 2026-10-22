@@ -91,19 +91,10 @@ class DeepSeekChatProvider {
         }
     }
     async prepareForDeactivate() {
+        // Mark inactive and notify the host. Do NOT call lm.selectChatModels here —
+        // that can deadlock Copilot BYOK teardown (DeepSeek V4 0.9.1 #271).
         this.isActive = false;
         this.onDidChangeLanguageModelChatInformationEmitter.fire();
-        // Force the host to re-pull `provideLanguageModelChatInformation` synchronously
-        // before the extension unloads. With `isActive = false` we now return [],
-        // which makes Copilot Chat drop DeepSeek models from the picker immediately
-        // instead of leaving stale entries behind after deactivate. The returned
-        // model list itself is unused — we only call this for its side effect.
-        try {
-            await vscode_1.default.lm.selectChatModels({ vendor: 'unified-proxy' });
-        }
-        catch (error) {
-            logger_1.logger.warn('Failed to refresh DeepSeek models during deactivate', error);
-        }
     }
     /** See provider/vision */
     async setVisionProxyModel() {

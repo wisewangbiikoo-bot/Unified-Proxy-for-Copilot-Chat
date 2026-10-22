@@ -1,25 +1,13 @@
-# Tools 列表不稳定
+# 工具列表漂移说明
 
-DeepSeek V4 for Copilot Chat 检测到当前会话中的 Tools（工具）列表在不同轮次之间可能不稳定。
+VS Code Copilot Chat 在不同轮次可能向 Language Model Provider 传入不同的工具子集（例如用户开关工具、Agent/MCP 增减工具）。这会导致「工具列表漂移」。
 
-## 为什么会发生
+## 与工具数量上限
 
-DeepSeek Chat Completions API 单次请求最多支持 **128 个 tools**。VS Code 的 Language Model API 也允许模型声明单次请求可接收的最大工具数。
+较旧的 DeepSeek Chat Completions 文档曾写单次请求最多 **128** 个 tools。上游 **DeepSeek V4 for Copilot Chat 0.9.4**（#291）已移除扩展侧的硬上限；**Unified Proxy v1.3.2** 起同样不再因超过 128 个工具而拒绝请求。
 
-当启用实验性设置 `deepseek-copilot.experimental.stabilizeToolList` 时，扩展会尝试预先激活 VS Code/Copilot 的 `activate_*` 虚拟工具，让传给 DeepSeek API 的 `tools` 参数在多轮对话中更完整、更稳定。
+实际能否接受大量 tools，取决于你配置的 **上游后端**（OpenCode Go、自建网关、官方 DeepSeek 等）。若上游仍报错，请在 VS Code **Configure Tools** 中关闭不常用的工具。
 
-如果当前环境中可用工具太多，Copilot 可能会对工具列表进行裁剪、分组或延迟展开。不同轮次得到的 Tools 数组可能不完全一致。
+## 实验性稳定工具列表
 
-## 影响
-
-DeepSeek 对输入前缀使用上下文 KV 缓存（KVCache）。Tools 数组是请求输入的一部分；如果 Tools 数组变化，缓存可能无法命中。
-
-开启这个实验性设置后，请求中可能包含更多函数工具定义（名称、说明和 JSON Schema），因此 **input tokens** 可能增加。缓存命中的 input tokens 单价更低，但仍会计入用量。少于 **64 个已启用工具** 时通常无需开启；超过 **128 个已启用工具** 时不建议开启，因为 DeepSeek 单次 `tools` 请求最多支持 **128 个 functions**。
-
-## 你可以怎么做
-
-1. 运行 VS Code 命令 `workbench.action.chat.configureTools`，关闭暂时不需要的工具或 MCP 工具。
-2. 关闭 `deepseek-copilot.experimental.stabilizeToolList`。
-3. 如果你不介意缓存命中率下降，也可以继续在当前会话发送消息。
-
-如果你有更好的解决方案，欢迎在 [issue #56](https://github.com/Vizards/deepseek-v4-for-copilot/issues/56) 讨论。
+开启实验性稳定工具列表后，请求中可能包含更多函数工具定义（名称、说明和 JSON Schema），因此 **input tokens** 可能增加。缓存命中的 input tokens 单价更低，但仍会计入用量。少于 **64 个已启用工具** 时通常无需开启；工具特别多时请自行权衡延迟与费用。

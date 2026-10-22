@@ -2,6 +2,21 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.2] — 2026-10-22
+
+### Fixed
+
+* **Remove stale 128-tool limit** — aligned with DeepSeek V4 **0.9.4** [#291](https://github.com/Vizards/deepseek-v4-for-copilot/issues/291).
+  `toolCalling` is now a boolean capability; requests no longer throw when Copilot
+  enables more than 128 tools (common with Agent + MCP).
+* **Deactivate without `selectChatModels`** — aligned with DeepSeek V4 **0.9.1** [#271](https://github.com/Vizards/deepseek-v4-for-copilot/issues/271).
+  Avoids potential Copilot BYOK teardown deadlock; still fires the model-info change event.
+
+### Notes
+
+* Upstream baseline remains **DeepSeek V4 for Copilot Chat v0.8.2**, with these two
+  cherry-picks from 0.9.x. Skipped DeepSeek-only items (V4.1 catalog, pricing UI, settings UX).
+
 ## [1.3.1] — 2026-09-08
 
 ### Added

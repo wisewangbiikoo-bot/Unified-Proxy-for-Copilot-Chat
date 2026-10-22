@@ -2,9 +2,9 @@
 
 **Use multiple OpenAI-compatible AI backends from the GitHub Copilot Chat model picker — driven by a single JSON config file.**
 
-This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards. It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing** plus **OpenCode Go `x-opencode-session` support**.
+This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://github.com/Vizards/deepseek-v4-for-copilot)** by Vizards (plus selected **0.9.x** fixes: no 128-tool cap, safer deactivate). It keeps Copilot’s agent mode, tool calling, thinking-effort menu, and vision proxy patterns, and adds **config-file multi-backend routing** plus **OpenCode Go `x-opencode-session` support**.
 
-> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.8.2** documentation.
+> For agent mode, vision proxy, tool-list stabilization, debug modes, and other shared behavior, refer to the **DeepSeek V4 for Copilot Chat v0.8.2** documentation (and 0.9.x notes for tool limits).
 
 简体中文完整说明见 [README.zh-cn.md](./README.zh-cn.md)（含 `proxy_configs.json` 配置章节，示例均使用占位符）。
 
@@ -24,6 +24,7 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 - Deduplicated streaming usage reports (v1.2.0) — prevents inflated token counts
 - **OpenCode Go session affinity** (v1.3.0) — auto `x-opencode-session` / `x-opencode-client` / `User-Agent` for `opencode.ai` backends
 - **Vision tool-result images** (v1.3.1) — align DeepSeek V4 0.8.2: describe tool screenshots via vision proxy; native mode passes `image_url`
+- **No 128-tool hard cap** (v1.3.2) — cherry-pick DeepSeek 0.9.4 #291; safer deactivate (0.9.1 #271)
 
 ## Quick start
 

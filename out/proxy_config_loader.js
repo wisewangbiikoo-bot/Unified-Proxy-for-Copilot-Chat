@@ -44,7 +44,8 @@ function buildModelFromProxy(key, proxy) {
         maxInputTokens: options.contextWindowTokens,
         maxOutputTokens: maxOutputForUi,
         capabilities: {
-            toolCalling: options.supportsTools ? 128 : 0,
+            // Boolean capability (DeepSeek 0.9.4 #291): no stale numeric 128-tool cap.
+            toolCalling: Boolean(options.supportsTools),
             // Copilot UI: allow attaching images for modes 1 and 2
             imageInput: options.supportsImages > 0,
             thinking: true,

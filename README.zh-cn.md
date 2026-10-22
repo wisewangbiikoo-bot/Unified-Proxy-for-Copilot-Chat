@@ -2,7 +2,7 @@
 
 **在 GitHub Copilot Chat 的模型选择器中，通过配置文件切换多个 OpenAI 兼容后端。**
 
-本插件基于 **[DeepSeek V4 for Copilot Chat v0.8.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植上游 vision 相关能力（含 tool-result 图片、描述 session、vision timeout）及 `low` 轻量推理、BYOK 等。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 与 **OpenCode Go `x-opencode-session`** 支持。
+本插件基于 **[DeepSeek V4 for Copilot Chat v0.8.2](https://github.com/Vizards/deepseek-v4-for-copilot)**（作者 Vizards）二次开发，并已移植上游 vision 相关能力（含 tool-result 图片、描述 session、vision timeout）及 `low` 轻量推理、BYOK 等；另 cherry-pick 了 **0.9.x** 两处修复（取消 128 工具硬上限、deactivate 不再强制 `selectChatModels`）。保留 Copilot 原生的 Agent、工具调用、思考模式菜单等能力，并增加 **多后端配置驱动** 与 **OpenCode Go `x-opencode-session`** 支持。
 
 > 除下文「配置文件」章节外，Agent 模式、视觉代理、工具列表稳定、调试模式等通用行为请参阅 **DeepSeek V4 for Copilot Chat v0.8.2** 官方文档与源码说明。
 
@@ -31,9 +31,10 @@
 5. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
 6. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
 7. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
-8. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-9. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-10. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+8. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
+9. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+10. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+11. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
 
 ## 快速开始
 
