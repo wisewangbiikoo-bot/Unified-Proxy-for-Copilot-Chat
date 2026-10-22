@@ -1,23 +1,24 @@
 # Sync .github/repository-topics.txt → GitHub repo Topics (About section).
-# Requires: repo or account "Workflow permissions" = Read and write (see docs/GITHUB_TOPICS_SETUP.zh-cn.md).
+# Requires: repo or account "Workflow permissions" = Read and write
+# (see docs/GITHUB_TOPICS_SETUP.zh-cn.md).
 # Manual fallback: About → ⚙ → Topics (always works).
+#
+# IMPORTANT: Do not use invalid permission keys (e.g. `metadata: write`).
+# GitHub silently schedules zero jobs and marks the run as failure
+# ("No jobs were run"), which emails watchers on every push.
 
 name: Sync repository topics
 
-# NOTE: Do NOT use `paths:` filters on push.
-# When the filter matches no files, GitHub still creates a run with
-# conclusion=failure and message "No jobs were run", which emails
-# watchers on every unrelated main push. Sync is cheap/idempotent —
-# always run on main instead.
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - .github/repository-topics.txt
+      - .github/workflows/sync-topics.yml
 
-# Must be at workflow level so job can request metadata write
 permissions:
   contents: read
-  metadata: write
 
 jobs:
   topics:
@@ -48,5 +49,5 @@ jobs:
             exit 1
           fi
           echo "Setting ${count} topic(s)..."
-          gh api --method PUT "/repos/${GITHUB_REPOSITORY}/topics" "${args[@]}"
+          gh api --method PUT "/repos/${GITHUB_REPOSITORY}/topics" -H "Accept: application/vnd.github+json" "${args[@]}"
           echo "Done. Verify at: https://github.com/${GITHUB_REPOSITORY}/topics"
