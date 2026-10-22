@@ -4,12 +4,15 @@
 
 name: Sync repository topics
 
+# NOTE: Do NOT use `paths:` filters on push.
+# When the filter matches no files, GitHub still creates a run with
+# conclusion=failure and message "No jobs were run", which emails
+# watchers on every unrelated main push. Sync is cheap/idempotent —
+# always run on main instead.
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - .github/repository-topics.txt
 
 # Must be at workflow level so job can request metadata write
 permissions:
