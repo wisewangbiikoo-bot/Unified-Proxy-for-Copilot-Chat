@@ -2,27 +2,36 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
-## [1.5.1] — 2026-10-30
+## [1.5.0] — 2026-10-31
+
+### Added
+
+* **Multi-account per proxy** — optional `accounts: [{ id, name, api_key }, …]` plus
+  `account_switch: { mode: "manual"|"rotate", rotate_minutes, rotate_every_n_requests }`.
+  * **manual (default)**: command **Switch Account**, or settings panel account picker
+  * **rotate**: timed and/or every-N-request advance; manual pick still works
+  * Active account stored in `globalState` only (not written to `proxy_configs.json`)
+  * Legacy single `api_key` still works (one implicit account)
+* **Settings webview** — **Unified Proxy: 设置** / status-bar click opens a compact panel
+  (account switch, rotate mode, thinking default, context / max output / temperature).
+  Hints sit behind `!` tooltips; account switch applies immediately.
+* **Custom status-bar icon** (`$(unified-proxy)`) on the right, near Copilot Chat.
+* **Copilot-like usage hover** — month / week / 5h meters + account + update time.
+
+### Changed
+
+* **Status bar label** shows monthly usage % (e.g. `21%`) so you see quota without relying
+  on hover refresh (VS Code Stable has no status-bar hover-fetch API).
+* **Quota % matches OpenCode console** — prefer `go/status` `access.meters` + round;
+  fall back to floored `/zen/go/v1/usage` when meters are missing.
+* **Refresh triggers** — window focus / idle→active, chat request bursts, status-bar click,
+  and **Refresh Usage**. Hover is detail-only (does not re-fetch).
 
 ### Fixed
 
 * **Usage account label is OpenCode Go identity**, not proxy/model name.
-  Fetches `GET https://opencode.ai/console/api/go/status` → `subscriberUserId`
-  (e.g. status `Go 月20% · user_…35E4PN`). Official `/v1/usage` has no account
-  name/email. Optional local `accounts[].name` only as alias in details.
-
-## [1.5.0] — 2026-10-30
-
-### Added
-
-* **Usage shows account** — status bar / Show Usage include account label
-  (corrected in 1.5.1 to OpenCode `subscriberUserId`, not model name).
-* **Multi-account per proxy** — optional `accounts: [{ id, name, api_key }, …]` plus
-  `account_switch: { mode: "manual"|"rotate", rotate_minutes: 5 }`.
-  * **manual (default)**: command **Switch Account**, or status-bar menu → Switch Account
-  * **rotate**: auto advance every `rotate_minutes` (default 5); manual pick still works
-  * Active account stored in `globalState` only (not written to `proxy_configs.json`)
-* Legacy single `api_key` still works (one implicit account).
+  From `GET https://opencode.ai/console/api/go/status` → `subscriberUserId`
+  (e.g. `user_…35E4PN`). Optional local `accounts[].name` is alias-only.
 
 ## [1.4.2] — 2026-10-30
 

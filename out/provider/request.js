@@ -44,11 +44,26 @@ function normalizeImageMode(value) {
 }
 async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, segment, messages, options, token, cacheDiagnostics, getVisionModel, }) {
     const proxy_config_loader_1 = require("../proxy_config_loader");
+    // Copilot model-menu「账号」(same UX as thinking) → sync active API key first
+    try {
+        const account_manager_1 = require("../account_manager");
+        account_manager_1.applyAccountFromModelOptions(modelInfo.id, options);
+    }
+    catch {
+        /* account manager optional */
+    }
     const proxyConfig = (0, proxy_config_loader_1.getProxyConfig)(modelInfo.id);
     if (!proxyConfig?.baseUrl) {
         throw new Error((0, i18n_1.t)("config.proxyNotFound", modelInfo.id));
     }
     const baseUrl = proxyConfig.baseUrl;
+    // Mark OpenCode session as early as possible so status bar can show
+    try {
+        require("../usage_monitor").setActiveChatModel(modelInfo.id, baseUrl);
+    }
+    catch {
+        /* optional */
+    }
     const actualApiKey = proxyConfig.apiKey;
     const actualModelId = proxyConfig.modelId;
     const extraHeaders = (0, opencode_headers_1.buildUpstreamHeaders)({
@@ -124,6 +139,13 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
         visionModelId: visionResolution.visionModelId,
         visionStats: visionResolution.stats,
     });
+    try {
+        const usage_monitor_1 = require("../usage_monitor");
+        usage_monitor_1.setActiveChatModel(modelInfo.id, baseUrl);
+    }
+    catch {
+        /* usage monitor optional */
+    }
     return {
         client,
         request,
@@ -135,5 +157,7 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
         replayMarkerMetadata: visionResolution.replayMarkerMetadata,
         visionMarkerTextChars: visionResolution.stats.markerVisionTextChars || undefined,
         initialResponseNotice: visionResolution.initialResponseNotice,
+        vscodeModelId: modelInfo.id,
+        baseUrl,
     };
 }

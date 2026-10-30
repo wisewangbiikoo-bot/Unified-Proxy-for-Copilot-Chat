@@ -35,8 +35,9 @@ Inherited from upstream v0.8.2:
 - **Thinking modes** — Off / Standard / Deep (Copilot-native menu); per-model defaults in JSON
 - **Vision proxy** — describe images via another Copilot model when the backend is text-only
 - **Reasoning replay, token usage** — same family of behavior as upstream (see upstream docs)
-- **OpenCode Go quota bar** (v1.4.0+) — status bar + Show/Refresh Usage; label is OpenCode `subscriberUserId` from `console/api/go/status` (not model name; 1.5.1)
-- **Multi-account keys** (v1.5.0) — `accounts` + manual Switch Account or timed `rotate`; active key in `globalState` only
+- **OpenCode Go quota bar** (v1.4.0+ / v1.5.0) — custom icon + monthly % on the bar; Copilot-like hover meters; account = `subscriberUserId`; % prefers console meters; refresh on focus / chat / click
+- **Multi-account keys** (v1.5.0) — `accounts` + manual switch or `rotate` by minutes / every-N requests; active key in `globalState` only
+- **Settings webview** (v1.5.0) — status-bar click for account, rotate, thinking, context, temperature
 
 Many “OpenAI Compatible Copilot” extensions focus on **listing models**; this extension keeps the **agent + tools** stack from DeepSeek V4.
 

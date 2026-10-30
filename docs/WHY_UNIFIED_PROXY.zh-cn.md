@@ -35,8 +35,9 @@
 - **思考模式**：停用 / 标准 / 深度，与 Copilot 模型菜单一致；可在配置里设每模型默认档
 - **视觉代理**：文本模型不支持图片时，可经其它 Copilot 模型描述附件后再转发
 - **推理 replay、Token 用量** 等与上游一致的行为（详见上游文档）
-- **OpenCode Go 配额状态栏**（v1.4.0+）：官方 usage + **OpenCode 账号 ID**（`go/status` 的 `subscriberUserId`，非模型名；1.5.1 修正）
-- **多账号 API Key**（v1.5.0）：`accounts` + 手动 Switch Account 或按分钟 `rotate`；当前 key 仅存 `globalState`
+- **OpenCode Go 配额状态栏**（v1.4.0+ / v1.5.0）：自定义图标 + 月用量 %；悬停月/周/5h 进度条；账号为 `go/status` 的 `subscriberUserId`；% 优先对齐控制台 meters；聚焦/聊天/点击刷新
+- **多账号 API Key**（v1.5.0）：`accounts` + 手动切换或按分钟 / 每 N 次请求 `rotate`；当前 key 仅存 `globalState`
+- **设置 Webview**（v1.5.0）：状态栏一点开，改账号/轮换/思考/上下文/温度等
 
 许多「OpenAI Compatible Copilot」类扩展主要解决**接入模型选择器**；本插件在 **Agent + 工具链** 上与 DeepSeek V4 同一代实现。
 

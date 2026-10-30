@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_CONTEXT_WINDOW_TOKENS = exports.DEFAULT_TEMPERATURE = void 0;
 exports.parseProxyEntry = parseProxyEntry;
 exports.parseVisionProxyConfig = parseVisionProxyConfig;
+exports.parseThinkingMode = parseThinkingMode;
 /** Default max output: omit from API request (unlimited). */
 exports.DEFAULT_MAX_OUTPUT_TOKENS = undefined;
 exports.DEFAULT_TEMPERATURE = 0.5;
@@ -246,7 +247,8 @@ function parseTemperature(proxy) {
         return exports.DEFAULT_TEMPERATURE;
     }
     const n = typeof raw === "number" ? raw : Number(String(raw).trim());
-    if (!Number.isFinite(n)) {
+    // 0 = auto (same as omitted) — forced zero temp is not supported via config
+    if (!Number.isFinite(n) || n <= 0) {
         return exports.DEFAULT_TEMPERATURE;
     }
     return Math.min(2, Math.max(0, n));

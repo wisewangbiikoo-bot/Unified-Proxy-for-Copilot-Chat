@@ -17,8 +17,9 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 - One Copilot model entry per proxy in `proxy_configs.json`
 - Per-model: images on/off (0/1/2), context window, max output, temperature, default thinking level
 - **Auto limits / vision / tools / thinking from `/v1/models`** (v1.3.3–1.3.5) — omit **or set `0`** on `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` to probe upstream (`limit`, `modalities`, `capabilities`). Memory-only (never writes `proxy_configs.json`); force off with `false`/`off` (not bare `0`). Details: [README.zh-cn.md](./README.zh-cn.md)
-- **OpenCode Go usage** (v1.4.0+) — status bar quota % + **OpenCode account id** from `console/api/go/status` (`subscriberUserId`), not the model/proxy name (fixed in 1.5.1)
-- **Multi-account API keys** (v1.5.0) — per-proxy `accounts` + `account_switch` (`manual` or timed `rotate`); **Switch Account**; active key in `globalState` only
+- **OpenCode Go usage** (v1.4.0+) — status bar monthly % + Copilot-like hover (month/week/5h meters); account id from `go/status` `subscriberUserId` (not model name). Prefer console meters for %; refresh on window focus / chat / click (hover is detail-only on Stable)
+- **Multi-account API keys** (v1.5.0) — per-proxy `accounts` + `account_switch` (`manual` or `rotate` by minutes / every-N requests); **Switch Account**; active key in `globalState` only
+- **Settings webview** (v1.5.0) — status-bar click / **Unified Proxy: 设置** for account, rotate, thinking, context, max output, temperature
 - **Configurable vision proxy** (v1.1.0): each backend can specify its own vision source — VS Code LM, or an API endpoint (OpenAI Chat, Anthropic Messages, OpenAI Responses)
 - **Per-backend vision proxy** (v1.1.0): `vision_proxy` field in `proxy_configs.json` for per-model vision configuration
 - Tool-schema sanitization for OpenAI-compatible gateways
@@ -42,8 +43,9 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 - **Unified Proxy: Show Usage** — OpenCode Go quota (per account) + today's local tokens
 - **Unified Proxy: Refresh Usage** — force-refresh status bar quota
 - **Unified Proxy: Switch Account** — pick active API key when `accounts` has 2+
+- **Unified Proxy: 设置** — settings webview (also via status-bar click)
 - **Unified Proxy: Show Logs** — output channel
-- **Unified Proxy: Open Settings**
+- **Unified Proxy: Extension Settings** — VS Code Settings UI for this extension
 
 ## License
 

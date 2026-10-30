@@ -51,7 +51,7 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
             try {
                 const usage_monitor_1 = require("../usage_monitor");
                 usage_monitor_1.recordLocalTokenUsage(usage, prepared.request?.model);
-                usage_monitor_1.notifyChatUsage();
+                usage_monitor_1.notifyChatUsage(prepared.vscodeModelId, prepared.baseUrl);
             } catch (e) {
                 logger_1.logger.warn('Failed to record local usage', e);
             }

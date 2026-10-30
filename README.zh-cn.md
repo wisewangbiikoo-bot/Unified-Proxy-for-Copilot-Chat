@@ -28,16 +28,17 @@
 2. **`proxy_configs.json` 驱动**：默认路径 `%USERPROFILE%\.vscode\proxy_configs.json`（可通过设置 `unified-proxy-copilot.proxyConfigPath` 覆盖）。
 3. **按模型可选参数**：图片支持（0/1/2 三档）、上下文窗口、最大输出、温度、思考模式默认值。
 4. **上游 `/v1/models` 自动探测**（v1.3.3–1.3.5）：省略或写 **`0`** 的 `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` 会按 OpenCode 风格目录自动填充；**仅内存、不回写配置**；强制关闭用 `false`/`off`。见下方「可选字段」表。
-5. **OpenCode Go 用量**（v1.4.0+）：状态栏显示 `GET …/v1/usage` 配额 %，并附带 **OpenCode 账号标识**（来自 `console/api/go/status` 的 `subscriberUserId`，如 `user_…35E4PN`；**不是**模型/proxy 名）。**请求驱动刷新**。命令 **Show Usage** / **Refresh Usage**。
-6. **多账号 / 多 API Key**（v1.5.0）：条目可配 `accounts` + `account_switch`。默认 **manual**（**Switch Account** / 状态栏菜单）；`rotate` 按分钟轮换。本地 `accounts[].name` 仅作别名；状态栏优先显示 OpenCode 账号 ID。
-7. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
-8. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
-9. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
-10. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
-11. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
-12. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-13. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-14. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+5. **OpenCode Go 用量**（v1.4.0+ / v1.5.0 强化）：右侧状态栏自定义图标 + **月用量 %**；悬停为月/周/5h 进度条（对齐 Copilot）。百分比优先用 `go/status` 的 `access.meters`（与控制台一致），回退 `/v1/usage`。账号标识为 `subscriberUserId`（**不是**模型名）。窗口聚焦 / 聊天请求 / 点击状态栏会刷新；**悬停只看详情**（Stable 无悬停拉网 API）。命令 **Show Usage** / **Refresh Usage**。
+6. **多账号 / 多 API Key**（v1.5.0）：`accounts` + `account_switch`（`manual` 或按分钟 / 每 N 次请求 `rotate`）。**Switch Account** 或设置面板即时切换；当前 key 仅存 `globalState`。本地 `accounts[].name` 仅别名。
+7. **设置 Webview**（v1.5.0）：命令 **Unified Proxy: 设置** 或点状态栏，紧凑面板改账号/轮换/思考默认档/上下文/最大输出/温度；说明藏在 `!` 悬停里。
+8. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
+9. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
+10. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
+11. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
+12. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
+13. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+14. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+15. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
 
 ### 多账号（`accounts`）
 
@@ -50,17 +51,18 @@
 ],
 "account_switch": {
   "mode": "manual",
-  "rotate_minutes": 5
+  "rotate_minutes": 5,
+  "rotate_every_n_requests": 10
 }
 ```
 
 | `account_switch.mode` | 行为 |
 |----------------------|------|
-| `manual`（默认） | 命令 **Unified Proxy: Switch Account**，或点状态栏 → Switch Account |
-| `rotate` / `auto` | 每 `rotate_minutes` 分钟轮换到下一个账号；仍可用手动切换提前换号 |
+| `manual`（默认） | 命令 **Switch Account**，或设置面板账号下拉（即时生效） |
+| `rotate` / `auto` | 按 `rotate_minutes` 和/或每 `rotate_every_n_requests` 次请求轮换；仍可手动提前换号 |
 
-- 状态栏用量形如：`Go 月20% · 周41% · user_…35E4PN`（OpenCode `subscriberUserId`；对应当前 API key）
-- 本地 `accounts[].name`（如「主号」）只在详情里作为别名，**不会**当成模型名显示
+- 状态栏：自定义图标 + **月用量 %**（如 `21%`）；悬停看月/周/5h 条与账号
+- 账号标识：`subscriberUserId`（如 `user_…35E4PN`）；本地 `accounts[].name` 仅别名
 - 当前选中 key 存在扩展 `globalState`，**不回写** `proxy_configs.json`
 
 ## 快速开始
@@ -75,9 +77,13 @@
 | 命令 | 说明 |
 |------|------|
 | **Unified Proxy: Reload Config** | 重新读取 `proxy_configs.json` |
+| **Unified Proxy: Show Usage** | 查看 OpenCode Go 配额与本机 token 累计 |
+| **Unified Proxy: Refresh Usage** | 强制刷新状态栏用量 |
+| **Unified Proxy: Switch Account** | 多账号时切换当前 API Key |
+| **Unified Proxy: 设置** | 打开设置 Webview（点状态栏同样打开） |
+| **Unified Proxy: Extension Settings** | 打开 VS Code 设置页（扩展配置项） |
 | **Unified Proxy: Show Logs** | 查看输出通道日志 |
-| **Unified Proxy: Open Settings** | 打开插件设置 |
-| **Unified Proxy: Set / Clear API Key** | （遗留命令，已不使用；API Key 写在 `proxy_configs.json` 的 `api_key`） |
+| **Unified Proxy: Set / Clear API Key** | （遗留命令，已不使用；API Key 写在 `proxy_configs.json`） |
 
 ## 配置文件 `proxy_configs.json`
 

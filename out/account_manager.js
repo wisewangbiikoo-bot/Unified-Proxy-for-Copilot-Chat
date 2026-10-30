@@ -5,7 +5,11 @@
  *
  * Config (optional):
  *   "accounts": [ { "id": "main", "name": "主号", "api_key": "oc_sk_..." }, ... ]
- *   "account_switch": { "mode": "manual"|"rotate", "rotate_minutes": 5 }
+ *   "account_switch": {
+ *     "mode": "manual"|"rotate"|"rotate_requests",
+ *     "rotate_minutes": 5,
+ *     "rotate_every_n_requests": 10
+ *   }
  * Legacy: single "api_key" → one account.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -18,6 +22,12 @@ exports.resolveApiKeyForProxy = resolveApiKeyForProxy;
 exports.maskApiKey = maskApiKey;
 exports.pickAndSwitchAccount = pickAndSwitchAccount;
 exports.getAccountSwitchMode = getAccountSwitchMode;
+exports.getAccountsForModelMenu = getAccountsForModelMenu;
+exports.applyAccountFromModelOptions = applyAccountFromModelOptions;
+exports.readAccountIdFromOptions = readAccountIdFromOptions;
+exports.notifyAccountChatRequest = notifyAccountChatRequest;
+exports.advanceRotate = advanceRotate;
+exports.rescheduleAllRotators = rescheduleAllRotators;
 
 const vscode = require("vscode");
 const fs = require("fs");
@@ -30,6 +40,8 @@ const ACTIVE_KEY = "unified-proxy-copilot.activeAccounts";
 let extContext = null;
 /** @type {Map<string, NodeJS.Timeout>} proxyKey -> rotate timer */
 const rotateTimers = new Map();
+/** @type {Map<string, number>} proxyKey -> request count since last rotate (rotate_requests mode) */
+const rotateRequestCounts = new Map();
 /** @type {(() => void)|null} */
 let onAccountChanged = null;
 
@@ -67,7 +79,7 @@ function maskApiKey(key) {
 /**
  * @param {object} proxy
  * @param {string} proxyKey
- * @returns {{ accounts: Array<{id:string,name:string,api_key:string}>, mode: 'manual'|'rotate', rotateMinutes: number }}
+ * @returns {{ accounts: Array<{id:string,name:string,api_key:string}>, mode: 'manual'|'rotate'|'rotate_requests', rotateMinutes: number, rotateEveryNRequests: number }}
  */
 function parseAccountsFromProxy(proxy, proxyKey) {
     const switchCfg =
@@ -75,7 +87,16 @@ function parseAccountsFromProxy(proxy, proxyKey) {
     let mode = String(switchCfg.mode || switchCfg.Mode || "manual")
         .trim()
         .toLowerCase();
-    if (mode === "auto" || mode === "rotate" || mode === "rotation") {
+    if (
+        mode === "rotate_requests" ||
+        mode === "requests" ||
+        mode === "request" ||
+        mode === "by_request" ||
+        mode === "by-requests"
+    ) {
+        mode = "rotate_requests";
+    }
+    else if (mode === "auto" || mode === "rotate" || mode === "rotation" || mode === "time") {
         mode = "rotate";
     }
     else {
@@ -86,6 +107,17 @@ function parseAccountsFromProxy(proxy, proxyKey) {
         rotateMinutes = 5;
     }
     rotateMinutes = Math.max(1, Math.min(1440, Math.floor(rotateMinutes)));
+
+    let rotateEveryNRequests = Number(
+        switchCfg.rotate_every_n_requests ??
+            switchCfg.rotateEveryNRequests ??
+            switchCfg.every_n_requests ??
+            10,
+    );
+    if (!Number.isFinite(rotateEveryNRequests) || rotateEveryNRequests <= 0) {
+        rotateEveryNRequests = 10;
+    }
+    rotateEveryNRequests = Math.max(1, Math.min(500, Math.floor(rotateEveryNRequests)));
 
     const rawList = proxy?.accounts || proxy?.api_keys || proxy?.apiKeys;
     /** @type {Array<{id:string,name:string,api_key:string}>} */
@@ -136,7 +168,7 @@ function parseAccountsFromProxy(proxy, proxyKey) {
         seen.add(a.api_key);
         uniq.push(a);
     }
-    return { accounts: uniq, mode, rotateMinutes };
+    return { accounts: uniq, mode, rotateMinutes, rotateEveryNRequests };
 }
 
 function readActiveMap() {
@@ -189,6 +221,7 @@ function listMultiAccountProxies() {
             return {
                 proxyKey: key,
                 proxyName: proxy.name || key,
+                baseUrl: String(proxy.base_url || ""),
                 ...parsed,
             };
         })
@@ -203,7 +236,10 @@ function getActiveAccount(proxyKey) {
     if (!proxy) {
         return null;
     }
-    const { accounts, mode, rotateMinutes } = parseAccountsFromProxy(proxy, proxyKey);
+    const { accounts, mode, rotateMinutes, rotateEveryNRequests } = parseAccountsFromProxy(
+        proxy,
+        proxyKey,
+    );
     if (!accounts.length) {
         return null;
     }
@@ -218,6 +254,7 @@ function getActiveAccount(proxyKey) {
         ...acc,
         mode,
         rotateMinutes,
+        rotateEveryNRequests,
         proxyKey,
     };
 }
@@ -252,6 +289,49 @@ function resolveApiKeyForProxy(proxyKey, proxy) {
     return { apiKey: acc.api_key, account: acc };
 }
 
+/**
+ * Accounts for Copilot model configurationSchema (like thinking mode menu).
+ * @returns {{ accounts: Array<{id:string,name:string,api_key:string}>, defaultId: string }|null}
+ */
+function getAccountsForModelMenu(proxyKey) {
+    const proxy = loadProxyRaw(proxyKey);
+    if (!proxy) {
+        return null;
+    }
+    const { accounts } = parseAccountsFromProxy(proxy, proxyKey);
+    if (accounts.length < 2) {
+        return null;
+    }
+    const active = getActiveAccount(proxyKey);
+    return {
+        accounts,
+        defaultId: active?.id || accounts[0].id,
+    };
+}
+
+/** Copilot passes modelConfiguration / configuration from model picker. */
+function readAccountIdFromOptions(options) {
+    const cfg = options?.modelConfiguration || options?.configuration || {};
+    const raw = cfg.proxyAccount ?? cfg.accountId ?? cfg.account;
+    return String(raw || "").trim();
+}
+
+/**
+ * Sync Copilot model-menu account selection into globalState (active key).
+ * @returns {boolean} true if account changed
+ */
+function applyAccountFromModelOptions(proxyKey, options) {
+    const id = readAccountIdFromOptions(options);
+    if (!id) {
+        return false;
+    }
+    const cur = getActiveAccount(proxyKey);
+    if (cur?.id === id) {
+        return false;
+    }
+    return setActiveAccountId(proxyKey, id, "model-menu");
+}
+
 function getAccountSwitchMode(proxyKey) {
     const proxy = loadProxyRaw(proxyKey);
     if (!proxy) {
@@ -260,23 +340,48 @@ function getAccountSwitchMode(proxyKey) {
     return parseAccountsFromProxy(proxy, proxyKey).mode;
 }
 
-function advanceRotate(proxyKey) {
+function advanceRotate(proxyKey, reason) {
     const proxy = loadProxyRaw(proxyKey);
     if (!proxy) {
         return;
     }
     const { accounts, mode } = parseAccountsFromProxy(proxy, proxyKey);
-    if (mode !== "rotate" || accounts.length < 2) {
+    if ((mode !== "rotate" && mode !== "rotate_requests") || accounts.length < 2) {
         return;
     }
     const cur = getActiveAccount(proxyKey);
     const idx = Math.max(0, accounts.findIndex((a) => a.id === cur?.id));
     const next = accounts[(idx + 1) % accounts.length];
-    setActiveAccountId(proxyKey, next.id, "rotate");
+    setActiveAccountId(proxyKey, next.id, reason || "rotate");
+    rotateRequestCounts.set(proxyKey, 0);
     void vscode.window.setStatusBarMessage(
         `Unified Proxy: ${proxy.name || proxyKey} → ${next.name}`,
         4000,
     );
+}
+
+/**
+ * Call after each chat API usage when account_switch.mode = rotate_requests.
+ * @param {string} proxyKey
+ */
+function notifyAccountChatRequest(proxyKey) {
+    const key = String(proxyKey || "").trim();
+    if (!key) {
+        return;
+    }
+    const proxy = loadProxyRaw(key);
+    if (!proxy) {
+        return;
+    }
+    const { accounts, mode, rotateEveryNRequests } = parseAccountsFromProxy(proxy, key);
+    if (mode !== "rotate_requests" || accounts.length < 2) {
+        return;
+    }
+    const n = (rotateRequestCounts.get(key) || 0) + 1;
+    rotateRequestCounts.set(key, n);
+    if (n >= rotateEveryNRequests) {
+        advanceRotate(key, "rotate-requests");
+    }
 }
 
 function rescheduleAllRotators() {
@@ -285,16 +390,27 @@ function rescheduleAllRotators() {
     }
     rotateTimers.clear();
     for (const [key, proxy] of listAllProxyEntries()) {
-        const { accounts, mode, rotateMinutes } = parseAccountsFromProxy(proxy, key);
-        if (mode !== "rotate" || accounts.length < 2) {
+        const { accounts, mode, rotateMinutes, rotateEveryNRequests } = parseAccountsFromProxy(
+            proxy,
+            key,
+        );
+        if (accounts.length < 2) {
             continue;
         }
-        const ms = rotateMinutes * 60 * 1000;
-        const timer = setInterval(() => advanceRotate(key), ms);
-        rotateTimers.set(key, timer);
-        logger_1.logger.info(
-            `Account rotator: ${key} every ${rotateMinutes} min (${accounts.length} accounts)`,
-        );
+        if (mode === "rotate") {
+            const ms = rotateMinutes * 60 * 1000;
+            const timer = setInterval(() => advanceRotate(key, "rotate-time"), ms);
+            rotateTimers.set(key, timer);
+            logger_1.logger.info(
+                `Account rotator (time): ${key} every ${rotateMinutes} min (${accounts.length} accounts)`,
+            );
+        }
+        else if (mode === "rotate_requests") {
+            rotateRequestCounts.set(key, rotateRequestCounts.get(key) || 0);
+            logger_1.logger.info(
+                `Account rotator (requests): ${key} every ${rotateEveryNRequests} API usages (${accounts.length} accounts)`,
+            );
+        }
     }
 }
 
@@ -304,7 +420,7 @@ async function pickAndSwitchAccount() {
         void vscode.window.showInformationMessage(
             "No multi-account proxies. Add `accounts` array in proxy_configs.json.",
         );
-        return;
+        return null;
     }
     let target = multi[0];
     if (multi.length > 1) {
@@ -318,7 +434,7 @@ async function pickAndSwitchAccount() {
             { title: "Switch account — select proxy", placeHolder: "Proxy / model entry" },
         );
         if (!picked) {
-            return;
+            return null;
         }
         target = picked.m;
     }
@@ -337,10 +453,16 @@ async function pickAndSwitchAccount() {
                 : "Mode: manual",
     });
     if (!chosen) {
-        return;
+        return null;
     }
     setActiveAccountId(target.proxyKey, chosen.a.id, "quickpick");
     void vscode.window.showInformationMessage(
         `${target.proxyName}: active account → ${chosen.a.name}`,
     );
+    return {
+        proxyKey: target.proxyKey,
+        baseUrl: String(target.baseUrl || loadProxyRaw(target.proxyKey)?.base_url || ""),
+        accountId: chosen.a.id,
+        accountName: chosen.a.name,
+    };
 }

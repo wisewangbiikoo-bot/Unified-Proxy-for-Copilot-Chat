@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Far-left hub; top/bottom = bowed arcs like the neon logo -->
+  <g fill="#000">
+    <circle cx="3.6" cy="12" r="3.0"/>
+
+    <!-- Top bowed arc (tube) -->
+    <path d="M6.2 10.35
+             C9.0 9.5 11.0 5.2 15.8 4.55
+             L16.15 6.15
+             C12.2 6.65 10.5 9.85 7.4 10.55 Z"/>
+
+    <!-- Middle beam -->
+    <path d="M6.5 11.2 H15.5 V12.8 H6.5 Z"/>
+
+    <!-- Bottom bowed arc (tube) -->
+    <path d="M6.2 13.65
+             C9.0 14.5 11.0 18.8 15.8 19.45
+             L16.15 17.85
+             C12.2 17.35 10.5 14.15 7.4 13.45 Z"/>
+
+    <!-- Three backends -->
+    <circle cx="18.9" cy="4.6" r="2.25"/>
+    <circle cx="18.9" cy="12" r="2.25"/>
+    <circle cx="18.9" cy="19.4" r="2.25"/>
+  </g>
+</svg>

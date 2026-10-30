@@ -5,6 +5,7 @@ exports.loadModelsFromConfig = loadModelsFromConfig;
 exports.getProxyConfig = getProxyConfig;
 exports.enrichModelsWithUpstreamLimits = enrichModelsWithUpstreamLimits;
 exports.clearAutoLimitsOverrides = clearAutoLimitsOverrides;
+exports.parseModelRef = parseModelRef;
 const fs = require("fs");
 const path_1 = require("path");
 const os_1 = require("os");
@@ -16,6 +17,25 @@ const CONFIG_SECTION = "unified-proxy-copilot";
 /** When max_output_tokens unset, use 0 so Copilot shows input context only (not input+output). */
 const UNLIMITED_OUTPUT_DISPLAY_TOKENS = 0;
 const EMPTY_CONFIG = '{\n  "proxies": {}\n}\n';
+/** Multi-account model id: `${proxyKey}:::${accountId}` (shown as separate Copilot models). */
+const MODEL_ACCOUNT_SEP = ":::";
+exports.MODEL_ACCOUNT_SEP = MODEL_ACCOUNT_SEP;
+
+/**
+ * @param {string} modelId
+ * @returns {{ proxyKey: string, accountId: string }}
+ */
+function parseModelRef(modelId) {
+    const s = String(modelId || "");
+    const idx = s.lastIndexOf(MODEL_ACCOUNT_SEP);
+    if (idx > 0) {
+        return {
+            proxyKey: s.slice(0, idx),
+            accountId: s.slice(idx + MODEL_ACCOUNT_SEP.length),
+        };
+    }
+    return { proxyKey: s, accountId: "" };
+}
 /**
  * In-memory only — never written back to proxy_configs.json.
  * Cleared on Reload Config / restart; re-fetched from upstream /models each time.
@@ -77,15 +97,21 @@ function applyAutoOverrides(proxyKey, options) {
     }
     return next;
 }
-function buildModelFromProxy(key, proxy) {
+function buildModelFromProxy(key, proxy, account) {
     const options = applyAutoOverrides(key, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
     const maxOutputForUi = options.maxOutputTokens ?? UNLIMITED_OUTPUT_DISPLAY_TOKENS;
+    const id = account ? `${key}${MODEL_ACCOUNT_SEP}${account.id}` : key;
+    const baseName = proxy.name || key;
+    const name = account ? `${baseName} · ${account.name}` : baseName;
+    const detail = account
+        ? `${proxy.description || baseName} · ${account.name}`
+        : proxy.description || `${baseName} - ${proxy.model_id}`;
     return {
-        id: key,
-        name: proxy.name || key,
+        id,
+        name,
         family: "unified-proxy",
         version: "auto",
-        detail: proxy.description || `${proxy.name} - ${proxy.model_id}`,
+        detail,
         maxInputTokens: options.contextWindowTokens,
         maxOutputTokens: maxOutputForUi,
         capabilities: {
@@ -96,9 +122,11 @@ function buildModelFromProxy(key, proxy) {
             thinking: Boolean(options.supportsThinking),
         },
         requiresThinkingParam: false,
+        _proxyKey: key,
+        _accountId: account?.id || "",
         _proxyConfig: {
             baseUrl: proxy.base_url,
-            apiKey: proxy.api_key, // legacy; runtime uses getProxyConfig → active account
+            apiKey: account?.api_key || proxy.api_key,
             modelId: proxy.model_id,
             supportsImages: options.supportsImages,
             supportsImagesFromConfig: options.supportsImagesFromConfig,
@@ -132,6 +160,7 @@ function loadModelsFromConfig() {
                 if (!proxy?.base_url) {
                     continue;
                 }
+                // One Copilot model per proxy entry; multi-account switched in「设置」panel.
                 models.push(buildModelFromProxy(key, proxy));
             }
         }
@@ -148,18 +177,23 @@ function getProxyConfig(modelId) {
             return null;
         }
         const proxyConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-        const proxy = proxyConfig.proxies?.[modelId];
+        const { proxyKey, accountId } = parseModelRef(modelId);
+        const proxy = proxyConfig.proxies?.[proxyKey];
         if (!proxy?.base_url) {
             return null;
         }
-        const options = applyAutoOverrides(modelId, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
         const account_manager_1 = require("./account_manager");
-        const resolved = account_manager_1.resolveApiKeyForProxy(modelId, proxy);
+        if (accountId) {
+            account_manager_1.setActiveAccountId(proxyKey, accountId, "model-select");
+        }
+        const options = applyAutoOverrides(proxyKey, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
+        const resolved = account_manager_1.resolveApiKeyForProxy(proxyKey, proxy);
         return {
             baseUrl: proxy.base_url,
             apiKey: resolved.apiKey || proxy.api_key,
-            accountId: resolved.account?.id || "",
+            accountId: resolved.account?.id || accountId || "",
             accountName: resolved.account?.name || "",
+            proxyKey,
             modelId: proxy.model_id,
             supportsImages: options.supportsImages,
             supportsImagesFromConfig: options.supportsImagesFromConfig,
@@ -255,7 +289,8 @@ async function enrichModelsWithUpstreamLimits(models) {
                 );
                 continue;
             }
-            const prev = autoLimitsOverrides.get(m.id) || {};
+            const overrideKey = m._proxyKey || parseModelRef(m.id).proxyKey || m.id;
+            const prev = autoLimitsOverrides.get(overrideKey) || {};
             const next = { ...prev };
             let localChange = false;
             const bits = [];
@@ -309,10 +344,10 @@ async function enrichModelsWithUpstreamLimits(models) {
             }
 
             if (localChange) {
-                autoLimitsOverrides.set(m.id, next);
+                autoLimitsOverrides.set(overrideKey, next);
                 changed = true;
                 logger_1.logger.info(
-                    `Auto meta for ${m.id} (model_id=${modelId}): ${bits.join(" ") || "(unchanged values)"}`,
+                    `Auto meta for ${m.id} (proxy=${overrideKey}, model_id=${modelId}): ${bits.join(" ") || "(unchanged values)"}`,
                 );
             }
         }

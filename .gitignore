@@ -14,6 +14,9 @@ secrets.json
 credentials.json
 *.secret
 
+# --- Local scratch / icon build helpers ---
+scripts_tmp/
+
 # --- Extension packaging / dependencies ---
 *.vsix
 node_modules/

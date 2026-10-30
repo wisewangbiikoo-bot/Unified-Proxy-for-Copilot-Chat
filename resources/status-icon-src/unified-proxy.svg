@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Far-left emitter; top/bottom = bowed arcs (like neon logo) -->
+  <g fill="#000">
+    <circle cx="3.4" cy="12" r="2.95"/>
+
+    <!-- Top bowed tube: outer then reverse inner -->
+    <path d="M6.05 10.15
+             C9.6 9.05 12.4 4.55 16.35 4.35
+             L16.55 5.95
+             C13.1 6.15 10.7 9.55 7.55 10.45 Z"/>
+
+    <!-- Middle -->
+    <rect x="6.3" y="11.2" width="9.3" height="1.6" rx="0.5"/>
+
+    <!-- Bottom bowed tube -->
+    <path d="M6.05 13.85
+             C9.6 14.95 12.4 19.45 16.35 19.65
+             L16.55 18.05
+             C13.1 17.85 10.7 14.45 7.55 13.55 Z"/>
+
+    <circle cx="19.05" cy="4.5" r="2.2"/>
+    <circle cx="19.05" cy="12" r="2.2"/>
+    <circle cx="19.05" cy="19.5" r="2.2"/>
+  </g>
+</svg>

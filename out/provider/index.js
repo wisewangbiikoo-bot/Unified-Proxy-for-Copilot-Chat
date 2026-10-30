@@ -108,6 +108,15 @@ class DeepSeekChatProvider {
         return consts_1.MODELS.map((model) => (0, models_1.toChatInfo)(model));
     }
     async provideLanguageModelChatResponse(modelInfo, messages, options, progress, token) {
+        // Status bar / account tracking — before preflight (preflight may return early)
+        try {
+            const proxy_config_loader_1 = require("../proxy_config_loader");
+            const pc = proxy_config_loader_1.getProxyConfig(modelInfo.id);
+            require("../usage_monitor").setActiveChatModel(modelInfo.id, pc?.baseUrl || "");
+        }
+        catch {
+            /* optional */
+        }
         const segment = (0, segment_1.resolveConversationSegment)(messages);
         (0, dump_1.dumpProviderInput)({
             globalStorageUri: this.globalStorageUri,

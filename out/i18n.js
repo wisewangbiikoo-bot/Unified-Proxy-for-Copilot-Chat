@@ -40,6 +40,9 @@ const zh = {
     'thinking.high.desc': '推荐日常使用',
     'thinking.max': '深度',
     'thinking.max.desc': '深度推理，适合复杂任务',
+    // Multi-account (same Copilot model menu as thinking)
+    'status.account': '账号',
+    'account.keyDesc': 'API Key {0}',
     // Vision
     'vision.vendorLabel': '提供商：{0}',
     'vision.noModel': '当前环境中没有可用的非 DeepSeek 视觉代理模型。',
@@ -83,6 +86,9 @@ const en = {
     'thinking.high.desc': 'Recommended for most tasks',
     'thinking.max': 'Max',
     'thinking.max.desc': 'Maximum reasoning depth for complex agent tasks',
+    // Multi-account (same Copilot model menu as thinking)
+    'status.account': 'Account',
+    'account.keyDesc': 'API Key {0}',
     // Vision
     // NOTE: vision.unableToDescribe has been moved to consts.ts as
     // IMAGE_DESCRIPTION_UNAVAILABLE — it is prompt content, not UI text.

@@ -53,7 +53,8 @@
       ],
       "account_switch": {
         "mode": "manual",
-        "rotate_minutes": 5
+        "rotate_minutes": 5,
+        "rotate_every_n_requests": 10
       },
       "model_id": "deepseek-v4.1-flash",
       "supports_images": 0,

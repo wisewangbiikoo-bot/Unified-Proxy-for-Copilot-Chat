@@ -9,6 +9,19 @@ exports.startUsageMonitor = startUsageMonitor;
 exports.recordLocalTokenUsage = recordLocalTokenUsage;
 exports.getLocalTokenUsage = getLocalTokenUsage;
 exports.notifyChatUsage = notifyChatUsage;
+exports.setActiveChatModel = setActiveChatModel;
+exports.getLastActiveChat = getLastActiveChat;
+exports.getLastQuotaSnapshot = getLastQuotaSnapshot;
+exports.refreshUsageQuota = refreshUsageQuota;
+
+function getLastQuotaSnapshot() {
+    return lastQuotaSnapshot;
+}
+
+/** @param {string} [reason] */
+function refreshUsageQuota(reason) {
+    return refreshQuota(reason || "external");
+}
 
 const vscode = require("vscode");
 const fs = require("fs");
@@ -37,6 +50,108 @@ let chatRefreshTimer = null;
 let forwardsSinceRefresh = 0;
 /** @type {{ at: number, endpoints: Array<{ label: string, baseUrl: string, usage: any, error?: string }> }|null} */
 let lastQuotaSnapshot = null;
+/**
+ * Last chat model that went through Unified Proxy.
+ * Copilot does not expose model-picker selection — Auto/builtin never call us.
+ * Status bar (auto) only while lastActiveChat.isOpenCode === true.
+ * @type {{ proxyKey: string, baseUrl: string, isOpenCode: boolean }|null}
+ */
+let lastActiveChat = null;
+/** Last time an OpenCode Go request hit our provider (ms). */
+let lastOpenCodeActivityAt = 0;
+/** @type {NodeJS.Timeout|null} */
+let hideAfterIdleTimer = null;
+/**
+ * Copilot Auto never notifies us. Soft-hide only after long OC idle so bar does not
+ * vanish while still on an OpenCode model between messages.
+ */
+const HIDE_AFTER_OC_IDLE_MS = 30 * 60 * 1000;
+
+function getLastActiveChat() {
+    return lastActiveChat;
+}
+
+function clearHideAfterIdleTimer() {
+    if (hideAfterIdleTimer) {
+        clearTimeout(hideAfterIdleTimer);
+        hideAfterIdleTimer = null;
+    }
+}
+
+/** Mark session as not-on-OpenCode and hide usage bar (auto mode). */
+function markNotOnOpenCode(reason) {
+    clearHideAfterIdleTimer();
+    if (lastActiveChat?.isOpenCode) {
+        lastActiveChat = {
+            proxyKey: lastActiveChat.proxyKey || "",
+            baseUrl: lastActiveChat.baseUrl || "",
+            isOpenCode: false,
+        };
+    }
+    else if (!lastActiveChat) {
+        lastActiveChat = { proxyKey: "", baseUrl: "", isOpenCode: false };
+    }
+    updateStatusBarVisibility(false, false);
+    logger_1.logger.info(`Usage status bar hide (${reason || "not-opencode"})`);
+}
+
+function scheduleHideAfterOpenCodeIdle() {
+    clearHideAfterIdleTimer();
+    hideAfterIdleTimer = setTimeout(() => {
+        hideAfterIdleTimer = null;
+        // Still no OC activity → treat as left OpenCode (e.g. switched to Copilot Auto)
+        if (
+            lastActiveChat?.isOpenCode &&
+            Date.now() - lastOpenCodeActivityAt >= HIDE_AFTER_OC_IDLE_MS - 500
+        ) {
+            markNotOnOpenCode("opencode-idle");
+        }
+    }, HIDE_AFTER_OC_IDLE_MS);
+}
+
+/**
+ * Remember which proxy/model the user is chatting with (only when our provider runs).
+ * @param {string} proxyKey  proxy_configs.json key (= Copilot model id)
+ * @param {string} [baseUrl]
+ */
+function setActiveChatModel(proxyKey, baseUrl) {
+    const key = String(proxyKey || "").trim();
+    if (!key) {
+        return;
+    }
+    let url = String(baseUrl || "").trim();
+    if (!url) {
+        try {
+            const pc = (0, proxy_config_loader_1.getProxyConfig)(key);
+            url = String(pc?.baseUrl || "").trim();
+        }
+        catch {
+            url = "";
+        }
+    }
+    const isOpenCode = (0, opencode_headers_1.isOpenCodeGoEndpoint)(url);
+    const prev = lastActiveChat;
+    lastActiveChat = { proxyKey: key, baseUrl: url, isOpenCode };
+    if (!isOpenCode) {
+        markNotOnOpenCode("unified-proxy-non-opencode");
+        return;
+    }
+    lastOpenCodeActivityAt = Date.now();
+    scheduleHideAfterOpenCodeIdle();
+    logger_1.logger.info(
+        `setActiveChatModel OC key=${key} url=${url} prevOc=${Boolean(prev?.isOpenCode)}`,
+    );
+    // Show bar immediately (don't wait for usage fetch)
+    if (statusBar && getShowMode() !== "off") {
+        statusBar.text = formatStatusBarLabel(lastQuotaSnapshot?.endpoints?.[0]?.usage, false);
+        statusBar.show();
+    }
+    else if (!statusBar) {
+        logger_1.logger.warn("setActiveChatModel: statusBar is null (monitor not started?)");
+    }
+    // Always refresh so percentages update for this account/model
+    void refreshQuota(prev?.proxyKey === key && prev?.isOpenCode ? "oc-again" : "oc-active");
+}
 
 function getShowMode() {
     const raw = String(
@@ -65,23 +180,65 @@ function getPollMs() {
     return Math.max(1, Math.min(180, Math.floor(n))) * 60 * 1000;
 }
 
-/** Refresh immediately once this many chat API usage events accumulate. */
+/** Refresh immediately once this many chat API usage events accumulate. 0 = off. */
 function getRefreshEveryN() {
     const n = Number(
         vscode.workspace.getConfiguration(CONFIG_SECTION).get("usageRefreshEveryNRequests") ?? 3,
     );
     if (!Number.isFinite(n) || n <= 0) {
-        return 3;
+        return 0;
     }
     return Math.max(1, Math.min(50, Math.floor(n)));
 }
 
 /**
- * OpenCode Go endpoints using the **active account** key per proxy.
- * Dedupe by api_key + origin (shared keys across proxies → one quota fetch).
- * @returns {Array<{ label: string, proxyKey: string, accountName: string, accountId: string, baseUrl: string, apiKey: string, openCodeSession: string, customHeaders: object|null }>}
+ * Prefer last OC chat model; else first multi-account OC; else first OC in config.
+ * (Cursor Agent may never call our LM provider — still need a quota target.)
+ * @returns {{ key: string, proxy: object }|null}
+ */
+function pickUsageProxyTarget(cfg) {
+    const account_manager_1 = require("./account_manager");
+    const entries = Object.entries(cfg.proxies || {}).filter(([, proxy]) =>
+        (0, opencode_headers_1.isOpenCodeGoEndpoint)(proxy?.base_url),
+    );
+    if (!entries.length) {
+        return null;
+    }
+    if (lastActiveChat?.isOpenCode && lastActiveChat.proxyKey) {
+        const rawId = lastActiveChat.proxyKey;
+        let key = rawId;
+        try {
+            key = proxy_config_loader_1.parseModelRef(rawId).proxyKey || rawId;
+        }
+        catch {
+            key = rawId;
+        }
+        let hit = entries.find(([k]) => k === key);
+        if (!hit) {
+            hit = entries.find(([k, p]) => k === rawId || p?.name === rawId || p?.name === key);
+        }
+        if (hit) {
+            return { key: hit[0], proxy: hit[1] };
+        }
+    }
+    for (const [key, proxy] of entries) {
+        const { accounts } = account_manager_1.parseAccountsFromProxy(proxy, key);
+        if (accounts.length > 1) {
+            return { key, proxy };
+        }
+    }
+    return { key: entries[0][0], proxy: entries[0][1] };
+}
+
+/**
+ * OpenCode Go endpoint for status/usage.
+ * @returns {Array<{ label: string, proxyKey: string, localAlias: string, accountId: string, baseUrl: string, apiKey: string, openCodeSession: string, customHeaders: object|null }>}
  */
 function collectOpenCodeEndpoints() {
+    // Explicitly on a non-OC model → no usage fetch
+    if (lastActiveChat && !lastActiveChat.isOpenCode) {
+        return [];
+    }
     const path = (0, proxy_config_loader_1.getProxyConfigPath)();
     if (!fs.existsSync(path)) {
         return [];
@@ -94,39 +251,44 @@ function collectOpenCodeEndpoints() {
         return [];
     }
     const account_manager_1 = require("./account_manager");
-    const seen = new Set();
-    const out = [];
-    for (const [key, proxy] of Object.entries(cfg.proxies || {})) {
-        const baseUrl = proxy?.base_url;
-        if (!baseUrl || !(0, opencode_headers_1.isOpenCodeGoEndpoint)(baseUrl)) {
-            continue;
-        }
-        const resolved = account_manager_1.resolveApiKeyForProxy(key, proxy);
-        const apiKey = resolved.apiKey;
-        if (!apiKey) {
-            continue;
-        }
-        const localAlias = resolved.account?.autoNamed
-            ? ""
-            : String(resolved.account?.name || "").trim();
-        const accountId = resolved.account?.id || "default";
-        const dedupe = `${String(apiKey).slice(0, 40)}|${String(baseUrl).replace(/\/$/, "")}`;
-        if (seen.has(dedupe)) {
-            continue;
-        }
-        seen.add(dedupe);
-        out.push({
+    const target = pickUsageProxyTarget(cfg);
+    if (!target) {
+        return [];
+    }
+    const { key, proxy } = target;
+    const baseUrl = proxy?.base_url;
+    if (!baseUrl || !(0, opencode_headers_1.isOpenCodeGoEndpoint)(baseUrl)) {
+        return [];
+    }
+    const resolved = account_manager_1.resolveApiKeyForProxy(key, proxy);
+    const apiKey = resolved.apiKey;
+    if (!apiKey) {
+        return [];
+    }
+    const localAlias = resolved.account?.autoNamed
+        ? ""
+        : String(resolved.account?.name || "").trim();
+    return [
+        {
             label: proxy.name || key,
             proxyKey: key,
             localAlias,
-            accountId,
+            accountId: resolved.account?.id || "default",
             baseUrl: String(baseUrl).replace(/\/$/, ""),
             apiKey: String(apiKey),
             openCodeSession: String(proxy.opencode_session || proxy.openCodeSession || ""),
             customHeaders: proxy.custom_headers || proxy.customHeaders || null,
-        });
+        },
+    ];
+}
+
+/** Prefer configured accounts[].name (e.g. email); else OpenCode subscriber short id. */
+function resolveAccountDisplayLabel(ep, idn) {
+    const alias = String(ep?.localAlias || "").trim();
+    if (alias) {
+        return alias;
     }
-    return out;
+    return String(idn?.shortLabel || "").trim();
 }
 
 function usageUrl(baseUrl) {
@@ -152,14 +314,53 @@ function shortOpenCodeAccountId(subscriberUserId) {
 }
 
 /**
- * OpenCode Go account identity via Console API (Bearer oc_sk_).
- * /zen/go/v1/usage has no account name; go/status returns subscriberUserId.
- * @returns {Promise<{ subscriberUserId?: string, product?: string, shortLabel: string, error?: string }>}
+ * Console dashboard percent: Math.round(used/limit*100).
+ * /zen/go/v1/usage uses Math.floor — can show 0% while console shows 1%.
+ * @see https://github.com/anomalyco/opencode/issues/53701
  */
-async function fetchGoAccountIdentity(apiKey) {
+function meterToWindow(meter) {
+    if (!meter || typeof meter !== "object") {
+        return null;
+    }
+    const used = Number(meter.usedMicroCents ?? meter.used_micro_cents);
+    const limit = Number(meter.limitMicroCents ?? meter.limit_micro_cents);
+    if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) {
+        return null;
+    }
+    const percent = Math.max(0, Math.min(100, Math.round((used / limit) * 100)));
+    return {
+        status: percent >= 100 ? "rate-limited" : "ok",
+        percent,
+        resetsAt: meter.resetsAt || meter.resets_at || "",
+        usedMicroCents: used,
+        limitMicroCents: limit,
+    };
+}
+
+/** Build usage windows from go/status access.meters (same source as console UI). */
+function usageFromStatusMeters(body) {
+    const m = body?.access?.meters || body?.meters || {};
+    const rolling = meterToWindow(m.fiveHour || m.five_hour || m.rolling);
+    const weekly = meterToWindow(m.week || m.weekly);
+    const monthly = meterToWindow(m.month || m.monthly);
+    if (!rolling && !weekly && !monthly) {
+        return null;
+    }
+    return { rolling, weekly, monthly };
+}
+
+/**
+ * OpenCode Go identity + precise usage via Console API (Bearer oc_sk_).
+ * Prefer go/status meters (dashboard rounding) over /zen/go/v1/usage (floored).
+ * @param {string} apiKey
+ * @param {{ bypassCache?: boolean }} [opts]
+ * @returns {Promise<{ subscriberUserId?: string, product?: string, shortLabel: string, usage?: object, error?: string }>}
+ */
+async function fetchGoAccountIdentity(apiKey, opts = {}) {
     const cacheKey = String(apiKey || "").slice(0, 48);
     const hit = identityCache.get(cacheKey);
-    if (hit && Date.now() - hit.at < IDENTITY_TTL_MS) {
+    // Usage must be fresh — only reuse cache for identity-only callers
+    if (!opts.bypassCache && hit && Date.now() - hit.at < IDENTITY_TTL_MS && hit.usage) {
         return hit;
     }
     (0, no_proxy_1.applyNoProxyBypass)();
@@ -193,6 +394,7 @@ async function fetchGoAccountIdentity(apiKey) {
             subscriberUserId,
             product,
             shortLabel,
+            usage: usageFromStatusMeters(body) || undefined,
         };
         identityCache.set(cacheKey, out);
         return out;
@@ -212,6 +414,7 @@ async function fetchGoAccountIdentity(apiKey) {
 }
 
 /**
+ * Fallback: floored percents from /zen/go/v1/usage (may disagree with console by ~1%).
  * @returns {Promise<{ usage?: any, error?: string }>}
  */
 async function fetchGoUsage(endpoint) {
@@ -254,16 +457,85 @@ function pct(window) {
     return Number.isFinite(n) ? n : null;
 }
 
-function formatStatusText(usage, openCodeAccountLabel) {
+/** OpenCode returns ISO UTC (often with ms); show local wall-clock, not “our math”. */
+function formatResetsAt(raw) {
+    const s = String(raw || "").trim();
+    if (!s) {
+        return "";
+    }
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) {
+        return s;
+    }
+    return d.toLocaleString();
+}
+
+/** Copilot-style: 「在 08:00 重置 11月1日」 */
+function formatResetsAtShort(raw) {
+    const s = String(raw || "").trim();
+    if (!s) {
+        return "";
+    }
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) {
+        return s;
+    }
+    const hm = d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    });
+    return `在 ${hm} 重置 ${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/** Segments in hover progress bar (was 10 ≈ 1/3 panel; 30 fills most of the hover). */
+const USAGE_BAR_SEGMENTS = 30;
+
+/**
+ * Progress bar for Markdown hover.
+ * Same glyph for filled + empty (only color differs) so heights match.
+ */
+function usageBarHtml(percent) {
+    const p = Math.max(0, Math.min(100, Number(percent) || 0));
+    const n = USAGE_BAR_SEGMENTS;
+    const filled = Math.round((p / 100) * n);
+    const empty = n - filled;
+    const cell = "█";
+    const solid = filled
+        ? `<span style="color:var(--vscode-foreground);">${cell.repeat(filled)}</span>`
+        : "";
+    const ghost = empty
+        ? `<span style="color:var(--vscode-disabledForeground);">${cell.repeat(empty)}</span>`
+        : "";
+    return `<span style="display:inline-block;">${solid}${ghost}</span>`;
+}
+
+/** Status bar: custom hub→backends icon (contributes.icons). */
+const STATUS_ICON = "$(unified-proxy)";
+const STATUS_ICON_ERR = "$(warning)";
+
+/** Compact bar text: icon + monthly% (Stable has no hover-fetch API). */
+function formatStatusBarLabel(usage, hasError) {
+    if (hasError) {
+        return STATUS_ICON_ERR;
+    }
+    const m = pct(usage?.monthly);
+    if (m === null) {
+        return `${STATUS_ICON} …`;
+    }
+    return `${STATUS_ICON} ${m}%`;
+}
+
+function formatStatusA11y(usage, openCodeAccountLabel) {
     if (!usage || typeof usage !== "object") {
         return openCodeAccountLabel
-            ? `$(pulse) Go ? · ${openCodeAccountLabel}`
-            : "$(pulse) Go ?";
+            ? `Unified Proxy OpenCode Go · ${openCodeAccountLabel}`
+            : "Unified Proxy OpenCode Go";
     }
+    const parts = [];
     const m = pct(usage.monthly);
     const w = pct(usage.weekly);
     const r = pct(usage.rolling);
-    const parts = [];
     if (m !== null) {
         parts.push(`月${m}%`);
     }
@@ -275,9 +547,99 @@ function formatStatusText(usage, openCodeAccountLabel) {
     }
     const body = parts.length ? parts.join(" · ") : "";
     const acct = openCodeAccountLabel ? ` · ${openCodeAccountLabel}` : "";
-    return `$(dashboard) Go ${body}${acct}`.replace(/\s+/g, " ").trim();
+    return `Unified Proxy Go ${body}${acct}`.replace(/\s+/g, " ").trim();
 }
 
+/** @deprecated kept for log lines */
+function formatStatusText(usage, openCodeAccountLabel) {
+    return formatStatusA11y(usage, openCodeAccountLabel);
+}
+
+/**
+ * Copilot-like hover panel (Markdown + safe HTML). Third-party extensions cannot
+ * attach a real webview to status-bar hover — this is the closest public API.
+ * @returns {vscode.MarkdownString}
+ */
+function buildHoverMarkdown(snapshot) {
+    const md = new vscode.MarkdownString(undefined, true);
+    md.supportHtml = true;
+    md.isTrusted = {
+        enabledCommands: [
+            "unified-proxy-copilot.openSettings",
+            "unified-proxy-copilot.refreshUsage",
+            "unified-proxy-copilot.showUsage",
+        ],
+    };
+
+    const ep = snapshot?.endpoints?.[0];
+    if (!ep) {
+        md.appendMarkdown(
+            "## Unified Proxy\n\n" +
+                "未解析到 OpenCode Go 用量。\n\n" +
+                `[打开设置](command:unified-proxy-copilot.openSettings) · ` +
+                `[刷新](command:unified-proxy-copilot.refreshUsage)\n`,
+        );
+        return md;
+    }
+
+    const title = ep.openCodeProduct
+        ? `OpenCode ${String(ep.openCodeProduct).toUpperCase()}`
+        : "OpenCode Go";
+    const account =
+        ep.openCodeAccountLabel || ep.openCodeAccountId || ep.localAlias || "—";
+
+    // ## is larger than ### (hover HTML cannot set font-size — sanitizer strips it)
+    md.appendMarkdown(`## ${title}\n\n`);
+    if (snapshot?.at) {
+        const t = new Date(snapshot.at);
+        const clock = t.toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+        });
+        md.appendMarkdown(`**更新于 ${clock}**\n\n`);
+    }
+    md.appendMarkdown(
+        `**账号** \`${account}\` &nbsp; ` +
+            `[设置](command:unified-proxy-copilot.openSettings) · ` +
+            `[刷新](command:unified-proxy-copilot.refreshUsage)\n\n`,
+    );
+
+    if (ep.error && !ep.usage) {
+        md.appendMarkdown(`$(warning) 用量拉取失败：${ep.error}\n\n`);
+    }
+    else {
+        const u = ep.usage || {};
+        const rows = [
+            { key: "monthly", label: "月额度" },
+            { key: "weekly", label: "周额度" },
+            { key: "rolling", label: "5 小时" },
+        ];
+        for (const row of rows) {
+            const win = u[row.key];
+            if (!win) {
+                continue;
+            }
+            const p = pct(win);
+            const used = p === null ? "?" : String(p);
+            const reset = win.resetsAt ? formatResetsAtShort(win.resetsAt) : "";
+            md.appendMarkdown(`### ${row.label} &nbsp; ${used}% 已使用\n\n`);
+            if (p !== null) {
+                md.appendMarkdown(`${usageBarHtml(p)}\n\n`);
+            }
+            if (reset) {
+                md.appendMarkdown(`${reset}\n\n`);
+            }
+        }
+    }
+
+    md.appendMarkdown(`---\n\n`);
+    md.appendMarkdown(`**模型** \`${ep.label || ep.proxyKey || "?"}\`\n`);
+    return md;
+}
+
+/** Plain-text fallback (logs / older callers). */
 function formatTooltip(snapshot) {
     const lines = ["Unified Proxy — OpenCode Go usage"];
     if (!snapshot?.endpoints?.length) {
@@ -290,12 +652,6 @@ function formatTooltip(snapshot) {
         lines.push(
             `  OpenCode account: ${ep.openCodeAccountId || ep.openCodeAccountLabel || "?"}`,
         );
-        if (ep.openCodeProduct) {
-            lines.push(`  product: ${ep.openCodeProduct}`);
-        }
-        if (ep.localAlias) {
-            lines.push(`  local alias: ${ep.localAlias}`);
-        }
         if (ep.error) {
             lines.push(`  error: ${ep.error}`);
             continue;
@@ -307,29 +663,81 @@ function formatTooltip(snapshot) {
                 continue;
             }
             const p = pct(win);
-            const reset = win.resetsAt ? ` reset ${win.resetsAt}` : "";
-            const st = win.status ? ` [${win.status}]` : "";
-            lines.push(`  ${name}: ${p ?? "?"}%${st}${reset}`);
+            const reset = win.resetsAt ? ` 重置 ${formatResetsAt(win.resetsAt)}` : "";
+            lines.push(`  ${name}: ${p ?? "?"}%${reset}`);
         }
     }
     if (snapshot.at) {
         lines.push("");
         lines.push(`Updated: ${new Date(snapshot.at).toLocaleString()}`);
     }
-    const pollMs = getPollMs();
-    const everyN = getRefreshEveryN();
-    if (pollMs > 0) {
-        lines.push(`Backup poll: every ${Math.round(pollMs / 60000)} min`);
-    }
-    else {
-        lines.push("Backup poll: off (request-driven)");
-    }
-    lines.push(
-        `Auto-refresh: after conversation idle (~${IDLE_REFRESH_MS}ms) · every ${everyN} API usage events · on focus`,
-    );
-    lines.push(`Pending API events since last refresh: ${forwardsSinceRefresh}`);
-    lines.push("Click: Show Usage · Command: Refresh Usage");
     return lines.join("\n");
+}
+
+/** @type {NodeJS.Timeout|null} */
+let statusBarFlashTimer = null;
+
+/** Show HH:mm:ss on the bar briefly so focus-refresh is visible without hover. */
+function flashStatusBarUpdatedAt(atMs) {
+    if (!statusBar) {
+        return;
+    }
+    const t = new Date(atMs || Date.now());
+    const clock = t.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+    if (statusBarFlashTimer) {
+        clearTimeout(statusBarFlashTimer);
+        statusBarFlashTimer = null;
+    }
+    statusBar.text = `$(unified-proxy) ${clock}`;
+    try {
+        statusBar.backgroundColor = new vscode.ThemeColor(
+            "statusBarItem.warningBackground",
+        );
+    }
+    catch {
+        /* ThemeColor may be unavailable in tests */
+    }
+    statusBarFlashTimer = setTimeout(() => {
+        statusBarFlashTimer = null;
+        if (!statusBar) {
+            return;
+        }
+        statusBar.backgroundColor = undefined;
+        // Restore compact label (tooltip already set by applyStatusBarIcon)
+        if (String(statusBar.text || "").includes(clock)) {
+            const ep = lastQuotaSnapshot?.endpoints?.[0];
+            statusBar.text = formatStatusBarLabel(
+                ep?.usage,
+                Boolean(ep?.error && !ep?.usage),
+            );
+        }
+    }, 4000);
+}
+
+function applyStatusBarIcon(usage, openCodeAccountLabel, snapshot, hasError) {
+    if (!statusBar) {
+        return;
+    }
+    // Don't clobber an in-progress flash
+    const flashing = Boolean(statusBarFlashTimer);
+    if (!flashing) {
+        statusBar.text = formatStatusBarLabel(usage, hasError);
+    }
+    statusBar.accessibilityInformation = {
+        label: formatStatusA11y(usage, openCodeAccountLabel),
+    };
+    // New MarkdownString each time; hide/show so next hover is not a stale bubble
+    const tip = snapshot
+        ? buildHoverMarkdown(snapshot)
+        : "Unified Proxy — 悬停看详情；窗口切回时自动刷新；点击打开设置";
+    statusBar.hide();
+    statusBar.tooltip = tip;
+    statusBar.show();
 }
 
 function todayKey() {
@@ -392,7 +800,24 @@ function recordLocalTokenUsage(usage, modelId) {
     void extContext.globalState.update(LOCAL_USAGE_KEY, cur);
 }
 
-function updateStatusBarVisibility(hasOpenCode, hasError) {
+/** True if proxy_configs has any OpenCode Go endpoint (for Cursor Agent / startup). */
+function configHasOpenCodeGo() {
+    try {
+        const path = (0, proxy_config_loader_1.getProxyConfigPath)();
+        if (!fs.existsSync(path)) {
+            return false;
+        }
+        const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
+        return Object.values(cfg.proxies || {}).some((p) =>
+            (0, opencode_headers_1.isOpenCodeGoEndpoint)(p?.base_url),
+        );
+    }
+    catch {
+        return false;
+    }
+}
+
+function updateStatusBarVisibility(_hasOpenCode, _hasError) {
     if (!statusBar) {
         return;
     }
@@ -401,7 +826,19 @@ function updateStatusBarVisibility(hasOpenCode, hasError) {
         statusBar.hide();
         return;
     }
-    if (mode === "always" || hasOpenCode || hasError) {
+    if (mode === "always") {
+        statusBar.show();
+        return;
+    }
+    // auto:
+    // - explicitly on a non-OC model (via our provider) → hide
+    // - on OC chat → show
+    // - no chat signal yet (Cursor Agent often never calls LM provider) but config has OC → show
+    if (lastActiveChat && !lastActiveChat.isOpenCode) {
+        statusBar.hide();
+        return;
+    }
+    if (lastActiveChat?.isOpenCode || configHasOpenCodeGo()) {
         statusBar.show();
     }
     else {
@@ -410,25 +847,42 @@ function updateStatusBarVisibility(hasOpenCode, hasError) {
 }
 
 async function refreshQuota(reason) {
+    // After a non-OpenCode chat → hide. Otherwise show OC quota (startup / OC chat).
+    if (lastActiveChat && !lastActiveChat.isOpenCode) {
+        lastQuotaSnapshot = { at: Date.now(), endpoints: [] };
+        updateStatusBarVisibility(false, false);
+        logger_1.logger.info(
+            `Usage refresh (${reason}): skip (active chat not OpenCode Go)`,
+        );
+        return lastQuotaSnapshot;
+    }
+
     const endpoints = collectOpenCodeEndpoints();
     if (!endpoints.length) {
         lastQuotaSnapshot = { at: Date.now(), endpoints: [] };
-        if (statusBar) {
-            statusBar.text = "$(dashboard) Go —";
-            statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
-        }
-        updateStatusBarVisibility(false, false);
-        logger_1.logger.info(`Usage refresh (${reason}): no OpenCode Go endpoints`);
+        applyStatusBarIcon(null, "", lastQuotaSnapshot, true);
+        // Still show while on OpenCode — do not hide just because usage fetch failed
+        updateStatusBarVisibility(true, true);
+        logger_1.logger.warn(
+            `Usage refresh (${reason}): no endpoints (proxyKey=${lastActiveChat?.proxyKey || "?"})`,
+        );
         return lastQuotaSnapshot;
     }
 
     const results = [];
     for (const ep of endpoints) {
-        const [r, idn] = await Promise.all([
-            fetchGoUsage(ep),
-            fetchGoAccountIdentity(ep.apiKey),
-        ]);
-        const openCodeAccountLabel = idn.shortLabel || "";
+        // Prefer go/status meters (console rounding). Fallback to floored /v1/usage.
+        const idn = await fetchGoAccountIdentity(ep.apiKey, { bypassCache: true });
+        let usage = idn.usage || null;
+        let error = idn.error || "";
+        let usageSource = usage ? "go/status-meters" : "";
+        if (!usage) {
+            const r = await fetchGoUsage(ep);
+            usage = r.usage || null;
+            error = r.error || error;
+            usageSource = usage ? "v1/usage-floored" : "";
+        }
+        const openCodeAccountLabel = resolveAccountDisplayLabel(ep, idn);
         results.push({
             label: ep.label,
             proxyKey: ep.proxyKey,
@@ -438,16 +892,17 @@ async function refreshQuota(reason) {
             openCodeAccountLabel,
             openCodeProduct: idn.product || "",
             identityError: idn.error || "",
+            usageSource,
             baseUrl: ep.baseUrl,
-            usage: r.usage,
-            error: r.error,
+            usage,
+            error: usage ? "" : error,
         });
-        if (r.error) {
+        if (!usage && error) {
             logger_1.logger.warn(
-                `Go usage fetch failed for ${ep.label}/${openCodeAccountLabel || "?"}: ${r.error}`,
+                `Go usage fetch failed for ${ep.label}/${openCodeAccountLabel || "?"}: ${error}`,
             );
         }
-        if (idn.error) {
+        if (idn.error && !idn.subscriberUserId) {
             logger_1.logger.warn(
                 `Go identity fetch failed for ${ep.label}: ${idn.error}`,
             );
@@ -455,24 +910,15 @@ async function refreshQuota(reason) {
     }
     lastQuotaSnapshot = { at: Date.now(), endpoints: results };
     const primary = results.find((x) => x.usage && !x.error) || results[0];
-    if (statusBar) {
-        if (primary?.error && !primary.usage) {
-            statusBar.text = `$(warning) Go err · ${primary.openCodeAccountLabel || "?"}`;
-        }
-        else {
-            statusBar.text = formatStatusText(
-                primary?.usage,
-                primary?.openCodeAccountLabel,
-            );
-        }
-        statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
-    }
+    applyStatusBarIcon(
+        primary?.usage,
+        primary?.openCodeAccountLabel,
+        lastQuotaSnapshot,
+        Boolean(primary?.error && !primary?.usage),
+    );
     updateStatusBarVisibility(true, Boolean(primary?.error));
     if (!primary?.error || primary?.usage) {
         forwardsSinceRefresh = 0;
-    }
-    if (statusBar && lastQuotaSnapshot) {
-        statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
     logger_1.logger.info(
         `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.openCodeAccountLabel)} oc=${primary?.openCodeAccountId || "?"}`,
@@ -502,13 +948,30 @@ function schedulePoll() {
  * - Idle debounce ≈ end of a multi-tool "big" turn → refresh once
  * - Every N usage events → refresh immediately (mid-turn safety)
  */
-function notifyChatUsage() {
+function notifyChatUsage(proxyKey, baseUrl) {
+    if (proxyKey) {
+        setActiveChatModel(proxyKey, baseUrl);
+        lastOpenCodeActivityAt = Date.now();
+        scheduleHideAfterOpenCodeIdle();
+        try {
+            const account_manager_1 = require("./account_manager");
+            const { proxyKey: pk } = require("./proxy_config_loader").parseModelRef(proxyKey);
+            account_manager_1.notifyAccountChatRequest(pk || proxyKey);
+        }
+        catch {
+            /* optional */
+        }
+    }
     if (getShowMode() === "off") {
+        return;
+    }
+    if (lastActiveChat && !lastActiveChat.isOpenCode) {
+        updateStatusBarVisibility(false, false);
         return;
     }
     forwardsSinceRefresh += 1;
     const everyN = getRefreshEveryN();
-    if (forwardsSinceRefresh >= everyN) {
+    if (everyN > 0 && forwardsSinceRefresh >= everyN) {
         if (chatRefreshTimer) {
             clearTimeout(chatRefreshTimer);
             chatRefreshTimer = null;
@@ -562,7 +1025,7 @@ async function showUsageDetail() {
                     continue;
                 }
                 lines.push(
-                    `  ${name}: ${pct(win) ?? "?"}%  status=${win.status || "?"}  resetsAt=${win.resetsAt || "?"}`,
+                    `  ${name}: ${pct(win) ?? "?"}%  status=${win.status || "?"}  重置=${formatResetsAt(win.resetsAt) || "?"}`,
                 );
             }
         }
@@ -594,15 +1057,110 @@ async function showUsageDetail() {
 }
 
 /**
+ * - focused false→true: Alt-Tab back into VS Code
+ * - active false→true while focused: idle then mouse move (approx. re-hover)
+ * Stable API has no real status-bar hover event; `active` idle edge is the fallback.
+ */
+let lastWindowFocused = true;
+let lastWindowActive = true;
+/** @type {NodeJS.Timeout|null} */
+let focusWatchTimer = null;
+let focusRefreshInFlight = false;
+let lastFocusRefreshAt = 0;
+const FOCUS_REFRESH_COOLDOWN_MS = 2000;
+
+/**
+ * @param {string} reason
+ * @param {{ flash?: boolean }} [opts]
+ */
+function refreshOnInteraction(reason, opts = {}) {
+    if (getShowMode() === "off") {
+        return Promise.resolve(null);
+    }
+    const now = Date.now();
+    if (focusRefreshInFlight || now - lastFocusRefreshAt < FOCUS_REFRESH_COOLDOWN_MS) {
+        logger_1.logger.info(
+            `Interaction refresh skipped (inFlight=${focusRefreshInFlight} cooldown) reason=${reason}`,
+        );
+        return Promise.resolve(lastQuotaSnapshot);
+    }
+    focusRefreshInFlight = true;
+    lastFocusRefreshAt = now;
+    logger_1.logger.info(`Interaction → refresh usage (${reason})`);
+    if (statusBar && opts.flash !== false) {
+        statusBar.text = "$(sync~spin)";
+        statusBar.tooltip = "正在刷新 OpenCode Go 用量…";
+    }
+    return refreshQuota(reason)
+        .then((snap) => {
+            if (opts.flash !== false) {
+                flashStatusBarUpdatedAt(snap?.at || Date.now());
+            }
+            return snap;
+        })
+        .catch((e) => {
+            logger_1.logger.warn(`Interaction refresh failed: ${e?.message || e}`);
+            if (statusBar) {
+                statusBar.backgroundColor = undefined;
+                const ep = lastQuotaSnapshot?.endpoints?.[0];
+                statusBar.text = formatStatusBarLabel(ep?.usage, Boolean(ep?.error && !ep?.usage));
+            }
+            return null;
+        })
+        .finally(() => {
+            focusRefreshInFlight = false;
+        });
+}
+
+function startFocusEdgeWatcher(context) {
+    const st = vscode.window.state || {};
+    lastWindowFocused = Boolean(st.focused);
+    lastWindowActive = st.active === undefined ? lastWindowFocused : Boolean(st.active);
+    logger_1.logger.info(
+        `Focus watcher start focused=${lastWindowFocused} active=${lastWindowActive}`,
+    );
+    focusWatchTimer = setInterval(() => {
+        const cur = vscode.window.state || {};
+        const focused = Boolean(cur.focused);
+        const active = cur.active === undefined ? focused : Boolean(cur.active);
+        if (focused && !lastWindowFocused) {
+            void refreshOnInteraction("focus-edge");
+        }
+        else if (focused && active && !lastWindowActive) {
+            // Idle → mouse/keyboard again while still in the window (re-hover approx.)
+            void refreshOnInteraction("active-resume");
+        }
+        if (!focused) {
+            // Ensure next focus/activity is a rising edge
+            lastWindowFocused = false;
+            lastWindowActive = false;
+        }
+        else {
+            lastWindowFocused = true;
+            lastWindowActive = active;
+        }
+    }, 400);
+    context.subscriptions.push({
+        dispose: () => {
+            if (focusWatchTimer) {
+                clearInterval(focusWatchTimer);
+                focusWatchTimer = null;
+            }
+        },
+    });
+}
+
+/**
  * @param {vscode.ExtensionContext} context
  */
 function startUsageMonitor(context) {
     extContext = context;
-    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBar.command = "unified-proxy-copilot.usageStatusMenu";
-    statusBar.name = "Unified Proxy Go Usage";
-    statusBar.text = "$(dashboard) Go …";
-    statusBar.tooltip = "Unified Proxy OpenCode usage";
+    // Right + low priority → sits near Copilot / notifications (higher = more left).
+    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1);
+    statusBar.command = "unified-proxy-copilot.openSettingsFromStatusBar";
+    statusBar.name = "Unified Proxy";
+    statusBar.text = `${STATUS_ICON} …`;
+    statusBar.tooltip = buildHoverMarkdown(null);
     context.subscriptions.push(statusBar);
 
     context.subscriptions.push(
@@ -611,36 +1169,22 @@ function startUsageMonitor(context) {
             await refreshQuota("manual");
             void vscode.window.showInformationMessage("Unified Proxy: usage refreshed");
         }),
-        vscode.commands.registerCommand("unified-proxy-copilot.usageStatusMenu", async () => {
-            const account_manager_1 = require("./account_manager");
-            const multi = account_manager_1.listMultiAccountProxies();
-            const items = [
-                { label: "$(graph) Show Usage", id: "show" },
-                { label: "$(refresh) Refresh Usage", id: "refresh" },
-            ];
-            if (multi.length) {
-                items.push({
-                    label: "$(account) Switch Account…",
-                    description: "manual / overrides rotate until next tick",
-                    id: "switch",
+        vscode.commands.registerCommand(
+            "unified-proxy-copilot.openSettingsFromStatusBar",
+            async () => {
+                // Click always refreshes before opening settings
+                await refreshQuota("statusbar-click");
+                const settings_panel_1 = require("./settings_panel");
+                settings_panel_1.openSettingsPanel(extContext, {
+                    proxyKey: lastActiveChat?.proxyKey,
                 });
-            }
-            const pick = await vscode.window.showQuickPick(items, {
-                title: "Unified Proxy — Usage / Account",
+            },
+        ),
+        vscode.commands.registerCommand("unified-proxy-copilot.usageStatusMenu", async () => {
+            const settings_panel_1 = require("./settings_panel");
+            settings_panel_1.openSettingsPanel(extContext, {
+                proxyKey: lastActiveChat?.proxyKey,
             });
-            if (!pick) {
-                return;
-            }
-            if (pick.id === "show") {
-                await showUsageDetail();
-            }
-            else if (pick.id === "refresh") {
-                await refreshQuota("manual");
-            }
-            else if (pick.id === "switch") {
-                await account_manager_1.pickAndSwitchAccount();
-                await refreshQuota("after-switch");
-            }
         }),
     );
 
@@ -656,12 +1200,30 @@ function startUsageMonitor(context) {
             }
         }),
         vscode.window.onDidChangeWindowState((state) => {
-            // Optional catch-up when returning to the window (not the primary trigger).
-            if (state.focused && getShowMode() !== "off" && forwardsSinceRefresh > 0) {
-                void refreshQuota("window-focus");
+            const focused = Boolean(state.focused);
+            const active =
+                state.active === undefined ? focused : Boolean(state.active);
+            logger_1.logger.info(
+                `onDidChangeWindowState focused=${focused} active=${active} prevF=${lastWindowFocused} prevA=${lastWindowActive}`,
+            );
+            if (focused && !lastWindowFocused) {
+                void refreshOnInteraction("focus-event");
+            }
+            else if (focused && active && !lastWindowActive) {
+                void refreshOnInteraction("active-event");
+            }
+            if (!focused) {
+                lastWindowFocused = false;
+                lastWindowActive = false;
+            }
+            else {
+                lastWindowFocused = true;
+                lastWindowActive = active;
             }
         }),
     );
+
+    startFocusEdgeWatcher(context);
 
     context.subscriptions.push({
         dispose: () => {
@@ -677,7 +1239,16 @@ function startUsageMonitor(context) {
     });
 
     schedulePoll();
-    void refreshQuota("activate");
+    context.subscriptions.push({
+        dispose: () => clearHideAfterIdleTimer(),
+    });
+
+    // Show + fetch as soon as OC endpoints exist in proxy_configs (Agent may never hit LM provider).
+    void refreshQuota("activate").then(() => {
+        logger_1.logger.info(
+            `Usage monitor ready; statusBar=${statusBar ? "ok" : "null"} mode=${getShowMode()}`,
+        );
+    });
 
     return {
         refresh: () => refreshQuota("external"),

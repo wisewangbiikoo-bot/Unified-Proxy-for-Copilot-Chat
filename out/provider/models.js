@@ -17,12 +17,12 @@ function toChatInfo(m) {
         m._proxyConfig?.thinkingMode ??
         "high";
     const hasThinkingMenu = m.capabilities.thinking;
+    // Copilot 原生面板只稳定渲染 reasoningEffort；多账号已拆成模型列表里的多行。
     return {
         id: m.id,
         name: m.name,
         family: m.family,
         version: m.version,
-        // Copilot model row 3rd segment: thinking enumDescription (same as DeepSeek V4).
         detail: showWarning
             ? (0, i18n_1.t)("config.proxyMissingDetail")
             : hasThinkingMenu
@@ -45,7 +45,6 @@ function toChatInfo(m) {
             : {}),
     };
 }
-/** Subtitle on model row: description of the active thinking level. */
 function getThinkingEnumDescription(effort) {
     if (effort === "max") {
         return (0, i18n_1.t)("thinking.max.desc");
@@ -58,11 +57,6 @@ function getThinkingEnumDescription(effort) {
     }
     return (0, i18n_1.t)("thinking.none.desc");
 }
-/**
- * Reads Copilot reasoningEffort (none | low | high | max).
- * Falls back to schemaDefault from proxy_configs, then "high".
- * Matches upstream DeepSeek V4 0.7.1 (low added in 0.7.0/0.7.1).
- */
 function getConfiguredThinkingEffort(options, schemaDefault) {
     const configuredEffort = options.modelConfiguration?.reasoningEffort ??
         options.configuration?.reasoningEffort;
@@ -111,7 +105,10 @@ function buildThinkingEffortSchema(defaultEffort = "high", modelDescription) {
     };
 }
 function resolveDetailKey(m) {
-    const suffix = m.id.startsWith("deepseek-v4-") ? m.id.slice("deepseek-v4-".length) : m.id;
+    const proxyKey = m._proxyKey || m.id;
+    const suffix = proxyKey.startsWith("deepseek-v4-")
+        ? proxyKey.slice("deepseek-v4-".length)
+        : proxyKey;
     const key = `model.${suffix}.detail`;
     const translated = (0, i18n_1.t)(key);
     return translated !== key ? key : undefined;

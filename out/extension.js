@@ -15,6 +15,7 @@ const dump_1 = require("./provider/dump");
 const no_proxy_1 = require("./no_proxy");
 const usage_monitor_1 = require("./usage_monitor");
 const account_manager_1 = require("./account_manager");
+const settings_panel_1 = require("./settings_panel");
 const fs = require("fs");
 let activeProvider;
 let configWatchPath;
@@ -92,9 +93,21 @@ async function activate(context) {
             logger_1.logger.info(`debugMode changed: ${previous} -> ${currentDebugMode}`);
         }
     }));
-    context.subscriptions.push(vscode_1.default.commands.registerCommand('unified-proxy-copilot.showLogs', () => logger_1.logger.show()), vscode_1.default.commands.registerCommand('unified-proxy-copilot.openSettings', () => vscode_1.default.commands.executeCommand('workbench.action.openSettings', 'unified-proxy-copilot')), vscode_1.default.commands.registerCommand('unified-proxy-copilot.reloadConfig', () => {
-        reloadModelsFromConfig(true);
-    }));
+    context.subscriptions.push(
+        vscode_1.default.commands.registerCommand('unified-proxy-copilot.showLogs', () => logger_1.logger.show()),
+        vscode_1.default.commands.registerCommand('unified-proxy-copilot.openSettings', () => {
+            (0, settings_panel_1.openSettingsPanel)(context);
+        }),
+        vscode_1.default.commands.registerCommand('unified-proxy-copilot.openExtensionSettings', () =>
+            vscode_1.default.commands.executeCommand('workbench.action.openSettings', 'unified-proxy-copilot'),
+        ),
+        vscode_1.default.commands.registerCommand('unified-proxy-copilot.reloadConfig', () => {
+            reloadModelsFromConfig(true);
+        }),
+    );
+    (0, settings_panel_1.registerSettingsCommands)(context, {
+        onSaved: () => reloadModelsFromConfig(true),
+    });
     try {
         const provider = new provider_1.DeepSeekChatProvider(context);
         activeProvider = provider;
