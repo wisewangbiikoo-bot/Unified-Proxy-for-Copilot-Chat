@@ -19,7 +19,7 @@ const no_proxy_1 = require("./no_proxy");
 
 const CONFIG_SECTION = "unified-proxy-copilot";
 const LOCAL_USAGE_KEY = "unified-proxy-copilot.localTokenUsage";
-const DEFAULT_POLL_MINUTES = 10;
+const DEFAULT_POLL_MINUTES = 5;
 const FETCH_TIMEOUT_MS = 15000;
 
 /** @type {vscode.ExtensionContext|null} */
@@ -199,6 +199,8 @@ function formatTooltip(snapshot) {
         lines.push("");
         lines.push(`Updated: ${new Date(snapshot.at).toLocaleString()}`);
     }
+    const pollMin = Math.round(getPollMs() / 60000);
+    lines.push(`Auto-refresh: every ${pollMin} min · after chat · on window focus`);
     lines.push("Click: Show Usage · Command: Refresh Usage");
     return lines.join("\n");
 }
@@ -397,6 +399,7 @@ async function showUsageDetail() {
         }
     }
     lines.push("\n(Quota % from GET /v1/usage; local totals from chat streams only.)");
+    lines.push("(This document is a snapshot — re-run Show Usage or Refresh Usage to update.)");
     const doc = await vscode.workspace.openTextDocument({
         content: lines.join("\n"),
         language: "plaintext",
@@ -432,6 +435,11 @@ function startUsageMonitor(context) {
             ) {
                 schedulePoll();
                 void refreshQuota("config-change");
+            }
+        }),
+        vscode.window.onDidChangeWindowState((state) => {
+            if (state.focused && getShowMode() !== "off") {
+                void refreshQuota("window-focus");
             }
         }),
     );

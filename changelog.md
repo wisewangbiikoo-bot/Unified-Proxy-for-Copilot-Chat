@@ -2,13 +2,21 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.4.1] — 2026-10-30
+
+### Changed
+
+* **Usage auto-refresh** — default `usagePollMinutes` **10 → 5**; also refresh when
+  the VS Code window regains focus. Status bar tooltip states auto-refresh rules;
+  Show Usage document notes it is a snapshot (not live).
+
 ## [1.4.0] — 2026-10-30
 
 ### Added
 
 * **OpenCode Go usage status bar** — polls `GET {base_url}/usage` for rolling (5h) /
   weekly / monthly `percent`; tooltip shows `resetsAt`. Setting
-  `showUsageStatusBar`: `auto` | `always` | `off`; `usagePollMinutes` (default 10).
+  `showUsageStatusBar`: `auto` | `always` | `off`; `usagePollMinutes` (default 5 as of 1.4.1).
 * **Commands** — `Unified Proxy: Show Usage` (quota + today's local token totals),
   `Unified Proxy: Refresh Usage`.
 * **Local token totals** — accumulate prompt/completion from chat stream `usage`
