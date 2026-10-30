@@ -66,6 +66,7 @@ function parseProxyEntry(proxy) {
 /**
  * @returns {{ value: boolean, fromConfig: boolean }}
  * Default true until upstream says otherwise (OpenAI-compat gateways usually support tools).
+ * Numeric 0 → auto (same as omitted). Use false / "false" / "off" to force off.
  */
 function parseSupportsTools(proxy) {
     const raw = proxy.supports_tools ?? proxy.supportsTools ?? proxy["Supports Tools"];
@@ -76,9 +77,18 @@ function parseSupportsTools(proxy) {
         return { value: raw, fromConfig: true };
     }
     if (typeof raw === "number") {
+        if (raw === 0) {
+            return { value: true, fromConfig: false };
+        }
         return { value: raw === 1, fromConfig: true };
     }
     const s = String(raw).trim().toLowerCase();
+    if (s === "0") {
+        return { value: true, fromConfig: false };
+    }
+    if (s === "false" || s === "no" || s === "off" || s === "none") {
+        return { value: false, fromConfig: true };
+    }
     return {
         value: s === "1" || s === "true" || s === "yes",
         fromConfig: true,
@@ -87,6 +97,7 @@ function parseSupportsTools(proxy) {
 /**
  * Optional supports_thinking / supportsThinking. Default true (show thinking menu)
  * until upstream capabilities.reasoning says otherwise.
+ * Numeric 0 → auto. Use false / "false" / "off" to force off.
  * @returns {{ value: boolean, fromConfig: boolean }}
  */
 function parseSupportsThinking(proxy) {
@@ -101,17 +112,24 @@ function parseSupportsThinking(proxy) {
         return { value: raw, fromConfig: true };
     }
     if (typeof raw === "number") {
+        if (raw === 0) {
+            return { value: true, fromConfig: false };
+        }
         return { value: raw === 1, fromConfig: true };
     }
     const s = String(raw).trim().toLowerCase();
-    if (s === "0" || s === "false" || s === "no" || s === "off" || s === "none") {
+    if (s === "0") {
+        return { value: true, fromConfig: false };
+    }
+    if (s === "false" || s === "no" || s === "off" || s === "none") {
         return { value: false, fromConfig: true };
     }
     return { value: true, fromConfig: true };
 }
 /**
- * Modes: 0=off, 1=vision-proxy text describe, 2=native OpenAI image_url
- * Omitted → fromConfig=false (may auto-set to 2/0 from upstream modalities).
+ * Modes: 1=vision-proxy text describe, 2=native OpenAI image_url
+ * Omitted / numeric 0 / "0" → fromConfig=false (auto from upstream modalities).
+ * Force off: "false" / "off" / "none" / "no" (not bare 0).
  * @returns {{ value: number, fromConfig: boolean }}
  */
 function parseSupportsImages(proxy) {
@@ -120,13 +138,13 @@ function parseSupportsImages(proxy) {
         return { value: 0, fromConfig: false };
     }
     if (typeof raw === "boolean") {
-        // Backward compat: true -> legacy describe path (1)
+        // Backward compat: true -> legacy describe path (1); false -> force off
         return { value: raw ? 1 : 0, fromConfig: true };
     }
     if (typeof raw === "number" && Number.isFinite(raw)) {
         const n = Math.floor(raw);
         if (n <= 0) {
-            return { value: 0, fromConfig: true };
+            return { value: 0, fromConfig: false };
         }
         if (n === 1) {
             return { value: 1, fromConfig: true };
@@ -134,7 +152,10 @@ function parseSupportsImages(proxy) {
         return { value: 2, fromConfig: true };
     }
     const s = String(raw).trim().toLowerCase();
-    if (s === "0" || s === "false" || s === "no" || s === "off" || s === "none") {
+    if (s === "0") {
+        return { value: 0, fromConfig: false };
+    }
+    if (s === "false" || s === "no" || s === "off" || s === "none") {
         return { value: 0, fromConfig: true };
     }
     if (s === "2" || s === "native" || s === "image_url" || s === "multimodal") {
@@ -146,18 +167,19 @@ function parseSupportsImages(proxy) {
     const n = Number(s);
     if (Number.isFinite(n)) {
         if (n <= 0) {
-            return { value: 0, fromConfig: true };
+            return { value: 0, fromConfig: false };
         }
         if (n === 1) {
             return { value: 1, fromConfig: true };
         }
         return { value: 2, fromConfig: true };
     }
-    return { value: 0, fromConfig: true };
+    return { value: 0, fromConfig: false };
 }
 /**
  * @returns {{ value: number, fromConfig: boolean }}
  * fromConfig=false → may be replaced by upstream /v1/models limit.context
+ * 0 / omitted → auto
  */
 function parseContextWindowSize(proxy) {
     const raw = proxy.context_window_size ??
@@ -166,10 +188,16 @@ function parseContextWindowSize(proxy) {
     if (raw === undefined || raw === null || raw === "") {
         return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
     }
-    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+        if (raw <= 0) {
+            return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
+        }
         return { value: Math.floor(raw), fromConfig: true };
     }
     const text = String(raw).trim().toUpperCase();
+    if (text === "0" || text === "AUTO") {
+        return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
+    }
     const match = text.match(/^(\d+(?:\.\d+)?)\s*([KMG])?$/);
     if (!match) {
         const n = Number(text);
@@ -181,16 +209,23 @@ function parseContextWindowSize(proxy) {
     const value = Number(match[1]);
     const unit = match[2];
     if (!unit) {
+        if (value <= 0) {
+            return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
+        }
         const n = value >= 1000 ? Math.floor(value) : Math.floor(value * 1000);
         return { value: n, fromConfig: true };
     }
     const mult = unit === "K" ? 1000 : unit === "M" ? 1000 * 1000 : 1000 * 1000 * 1000;
-    return { value: Math.floor(value * mult), fromConfig: true };
+    const scaled = Math.floor(value * mult);
+    if (scaled <= 0) {
+        return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
+    }
+    return { value: scaled, fromConfig: true };
 }
 /**
  * @returns {{ value: number|undefined, fromConfig: boolean }}
  * fromConfig=false → may be replaced by upstream /v1/models limit.output
- * Explicit 0 / negative → unlimited, but fromConfig=true (do not auto-fill)
+ * omitted / 0 / negative → auto (same as omitted)
  */
 function parseMaxOutputTokens(proxy) {
     const raw = proxy.max_output_tokens ??
@@ -201,7 +236,7 @@ function parseMaxOutputTokens(proxy) {
     }
     const n = typeof raw === "number" ? raw : Number(String(raw).trim());
     if (!Number.isFinite(n) || n <= 0) {
-        return { value: exports.DEFAULT_MAX_OUTPUT_TOKENS, fromConfig: true };
+        return { value: exports.DEFAULT_MAX_OUTPUT_TOKENS, fromConfig: false };
     }
     return { value: Math.floor(n), fromConfig: true };
 }

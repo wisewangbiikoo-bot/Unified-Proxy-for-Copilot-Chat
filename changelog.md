@@ -2,6 +2,15 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.5] — 2026-10-30
+
+### Changed
+
+* **Numeric `0` means auto-detect** (same as omitting the field) for
+  `context_window_size`, `max_output_tokens`, `supports_images`, `supports_tools`,
+  `supports_thinking`. To force images/tools/thinking off, use `false` / `off` /
+  `none` (not bare `0`). Still memory-only; never writes `proxy_configs.json`.
+
 ## [1.3.4] — 2026-10-30
 
 ### Added

@@ -90,13 +90,13 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `supports_images` | `0` / `1` / `2` | **自动** → 上游 `modalities` 含图则为 `2`，否则 `0` | 图片处理模式，见下方说明；`1`（描述代理）只能手写，不会自动填 |
-| `supports_tools` | 布尔 | **自动** → 上游 `capabilities.tools.supported`；无字段则 `true` | 工具调用 |
-| `supports_thinking` | 布尔 | **自动** → 上游 `capabilities.reasoning.supported`；无字段则 `true` | 是否显示思考档位菜单 |
-| `context_window_size` | 数字或 `"128K"` | **自动** → 上游 `limit.context`；失败则 `128K` | Copilot 显示的上下文上限；省略时请求 `{base_url}/models` 按 `model_id` 匹配 |
-| `max_output_tokens` | 数字 | **自动** → 上游 `limit.output`；失败则不限制 | 省略时同上自动填充；显式 `0` 表示不限制且不做自动填充 |
+| `supports_images` | `0` / `1` / `2` | **自动** → 上游 `modalities` 含图则为 `2`，否则 `0` | 省略或 `0`=自动；`1`/`2` 手写；强制关图用 `false`/`off`（不要用裸 `0`） |
+| `supports_tools` | 布尔 | **自动** → 上游 `capabilities.tools.supported`；无字段则 `true` | 省略或 `0`=自动；强制关用 `false`/`off` |
+| `supports_thinking` | 布尔 | **自动** → 上游 `capabilities.reasoning.supported`；无字段则 `true` | 省略或 `0`=自动；强制关用 `false`/`off` |
+| `context_window_size` | 数字或 `"128K"` | **自动** → 上游 `limit.context`；失败则 `128K` | 省略或 `0`=自动 |
+| `max_output_tokens` | 数字 | **自动** → 上游 `limit.output`；失败则不限制 | 省略或 `0`=自动 |
 
-> **自动填充只在内存**：不会改写 `proxy_configs.json`。每次启动 / Reload Config 重新向 `{base_url}/models` 探测。
+> **自动填充只在内存**：不会改写 `proxy_configs.json`。每次启动 / Reload Config 重新向 `{base_url}/models` 探测。省略与数值 **`0` 均视为自动检测**。
 | `temperature` | 数字 | `0.5` | 采样温度 |
 | `thinking_mode` | 字符串 | `停用` | 思考模式菜单默认值，见下表（不自动改默认档，只自动「是否支持」） |
 | `custom_headers` | 对象 | 无 | 额外 HTTP 头（会覆盖自动注入的同名头） |
