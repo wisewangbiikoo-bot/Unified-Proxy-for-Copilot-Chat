@@ -2,6 +2,19 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.5.0] — 2026-10-30
+
+### Added
+
+* **Usage shows account** — status bar / Show Usage include active account name
+  (e.g. `Go 月20% · 主号`).
+* **Multi-account per proxy** — optional `accounts: [{ id, name, api_key }, …]` plus
+  `account_switch: { mode: "manual"|"rotate", rotate_minutes: 5 }`.
+  * **manual (default)**: command **Switch Account**, or status-bar menu → Switch Account
+  * **rotate**: auto advance every `rotate_minutes` (default 5); manual pick still works
+  * Active account stored in `globalState` only (not written to `proxy_configs.json`)
+* Legacy single `api_key` still works (one implicit account).
+
 ## [1.4.2] — 2026-10-30
 
 ### Changed

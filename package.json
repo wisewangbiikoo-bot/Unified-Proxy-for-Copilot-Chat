@@ -1,9 +1,9 @@
 {
 	"name": "unified-proxy-copilot",
 	"displayName": "Unified Proxy for Copilot Chat",
-	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.8.2 (+ selected 0.9.x fixes); OpenCode Go session headers + usage status bar.",
+	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. OpenCode Go session headers, usage status bar with account label, multi-API-key switch/rotate.",
 	"icon": "resources/icon.png",
-	"version": "1.4.2",
+	"version": "1.5.0",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {
@@ -90,6 +90,10 @@
 			{
 				"command": "unified-proxy-copilot.refreshUsage",
 				"title": "Unified Proxy: Refresh Usage"
+			},
+			{
+				"command": "unified-proxy-copilot.switchAccount",
+				"title": "Unified Proxy: Switch Account"
 			}
 		],
 		"walkthroughs": [

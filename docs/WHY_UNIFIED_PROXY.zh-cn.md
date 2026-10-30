@@ -35,7 +35,8 @@
 - **思考模式**：停用 / 标准 / 深度，与 Copilot 模型菜单一致；可在配置里设每模型默认档
 - **视觉代理**：文本模型不支持图片时，可经其它 Copilot 模型描述附件后再转发
 - **推理 replay、Token 用量** 等与上游一致的行为（详见上游文档）
-- **OpenCode Go 配额状态栏**（v1.4.0+）：官方 `GET …/v1/usage`；对话停歇或累计 N 次 API 后刷新（定时轮询默认关）；命令 Show/Refresh Usage；本机按日 token 累计在 `globalState`
+- **OpenCode Go 配额状态栏**（v1.4.0+）：官方 `GET …/v1/usage`；显示**当前账号名**；对话停歇或累计 N 次 API 后刷新
+- **多账号 API Key**（v1.5.0）：`accounts` + 手动 Switch Account 或按分钟 `rotate`；当前账号仅存 `globalState`
 
 许多「OpenAI Compatible Copilot」类扩展主要解决**接入模型选择器**；本插件在 **Agent + 工具链** 上与 DeepSeek V4 同一代实现。
 

@@ -28,15 +28,39 @@
 2. **`proxy_configs.json` 驱动**：默认路径 `%USERPROFILE%\.vscode\proxy_configs.json`（可通过设置 `unified-proxy-copilot.proxyConfigPath` 覆盖）。
 3. **按模型可选参数**：图片支持（0/1/2 三档）、上下文窗口、最大输出、温度、思考模式默认值。
 4. **上游 `/v1/models` 自动探测**（v1.3.3–1.3.5）：省略或写 **`0`** 的 `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` 会按 OpenCode 风格目录自动填充；**仅内存、不回写配置**；强制关闭用 `false`/`off`。见下方「可选字段」表。
-5. **OpenCode Go 用量**（v1.4.0+）：状态栏显示 `GET …/v1/usage` 的 5 小时 / 周 / 月配额百分比。**请求驱动刷新**（v1.4.2）：一轮对话 API 停歇约 1.2s 后刷新，或累计 `usageRefreshEveryNRequests`（默认 3）次带 usage 的转发后立即刷新；定时轮询默认关（`usagePollMinutes=0`）。命令 **Show Usage** / **Refresh Usage**。
-6. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
-7. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
-8. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
-9. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
-10. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
-11. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-12. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-13. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+5. **OpenCode Go 用量**（v1.4.0+）：状态栏显示 `GET …/v1/usage` 的配额 %，并带上**当前账号名**。**请求驱动刷新**（v1.4.2）：对话停歇约 1.2s 或累计 N 次 API 后刷新。命令 **Show Usage** / **Refresh Usage**。
+6. **多账号 / 多 API Key**（v1.5.0）：条目可配 `accounts` + `account_switch`。默认 **manual**（命令 **Switch Account** 或点状态栏菜单切换）；`mode: "rotate"` 按 `rotate_minutes`（默认 5）自动轮换。当前账号仅存扩展 `globalState`。见下方「多账号」。
+7. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
+8. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
+9. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
+10. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
+11. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
+12. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+13. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+14. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+
+### 多账号（`accounts`）
+
+适用于 OpenCode Go 单订阅不够、需多 key 轮换的场景。仍可只写 `api_key`（单账号，兼容旧配置）。
+
+```json
+"accounts": [
+  { "id": "main", "name": "主号", "api_key": "oc_sk_..." },
+  { "id": "bak", "name": "副号", "api_key": "oc_sk_..." }
+],
+"account_switch": {
+  "mode": "manual",
+  "rotate_minutes": 5
+}
+```
+
+| `account_switch.mode` | 行为 |
+|----------------------|------|
+| `manual`（默认） | 命令 **Unified Proxy: Switch Account**，或点状态栏 → Switch Account |
+| `rotate` / `auto` | 每 `rotate_minutes` 分钟轮换到下一个账号；仍可用手动切换提前换号 |
+
+- 状态栏用量形如：`Go 月20% · 周41% · 主号`（usage 对应当前活跃账号）
+- 当前选中账号存在扩展 `globalState`，**不回写** `proxy_configs.json`
 
 ## 快速开始
 

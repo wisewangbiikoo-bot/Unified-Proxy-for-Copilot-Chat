@@ -98,7 +98,7 @@ function buildModelFromProxy(key, proxy) {
         requiresThinkingParam: false,
         _proxyConfig: {
             baseUrl: proxy.base_url,
-            apiKey: proxy.api_key,
+            apiKey: proxy.api_key, // legacy; runtime uses getProxyConfig → active account
             modelId: proxy.model_id,
             supportsImages: options.supportsImages,
             supportsImagesFromConfig: options.supportsImagesFromConfig,
@@ -153,9 +153,13 @@ function getProxyConfig(modelId) {
             return null;
         }
         const options = applyAutoOverrides(modelId, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
+        const account_manager_1 = require("./account_manager");
+        const resolved = account_manager_1.resolveApiKeyForProxy(modelId, proxy);
         return {
             baseUrl: proxy.base_url,
-            apiKey: proxy.api_key,
+            apiKey: resolved.apiKey || proxy.api_key,
+            accountId: resolved.account?.id || "",
+            accountName: resolved.account?.name || "",
             modelId: proxy.model_id,
             supportsImages: options.supportsImages,
             supportsImagesFromConfig: options.supportsImagesFromConfig,

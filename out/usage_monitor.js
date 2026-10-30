@@ -77,8 +77,9 @@ function getRefreshEveryN() {
 }
 
 /**
- * Unique OpenCode Go endpoints from proxy_configs.json (dedupe by api_key + origin).
- * @returns {Array<{ label: string, baseUrl: string, apiKey: string, openCodeSession: string, customHeaders: object|null }>}
+ * OpenCode Go endpoints using the **active account** key per proxy.
+ * Dedupe by api_key + origin (shared keys across proxies → one quota fetch).
+ * @returns {Array<{ label: string, proxyKey: string, accountName: string, accountId: string, baseUrl: string, apiKey: string, openCodeSession: string, customHeaders: object|null }>}
  */
 function collectOpenCodeEndpoints() {
     const path = (0, proxy_config_loader_1.getProxyConfigPath)();
@@ -92,17 +93,21 @@ function collectOpenCodeEndpoints() {
     catch {
         return [];
     }
+    const account_manager_1 = require("./account_manager");
     const seen = new Set();
     const out = [];
     for (const [key, proxy] of Object.entries(cfg.proxies || {})) {
         const baseUrl = proxy?.base_url;
-        const apiKey = proxy?.api_key;
-        if (!baseUrl || !apiKey) {
+        if (!baseUrl || !(0, opencode_headers_1.isOpenCodeGoEndpoint)(baseUrl)) {
             continue;
         }
-        if (!(0, opencode_headers_1.isOpenCodeGoEndpoint)(baseUrl)) {
+        const resolved = account_manager_1.resolveApiKeyForProxy(key, proxy);
+        const apiKey = resolved.apiKey;
+        if (!apiKey) {
             continue;
         }
+        const accountName = resolved.account?.name || "default";
+        const accountId = resolved.account?.id || "default";
         const dedupe = `${String(apiKey).slice(0, 40)}|${String(baseUrl).replace(/\/$/, "")}`;
         if (seen.has(dedupe)) {
             continue;
@@ -110,6 +115,9 @@ function collectOpenCodeEndpoints() {
         seen.add(dedupe);
         out.push({
             label: proxy.name || key,
+            proxyKey: key,
+            accountName,
+            accountId,
             baseUrl: String(baseUrl).replace(/\/$/, ""),
             apiKey: String(apiKey),
             openCodeSession: String(proxy.opencode_session || proxy.openCodeSession || ""),
@@ -167,9 +175,9 @@ function pct(window) {
     return Number.isFinite(n) ? n : null;
 }
 
-function formatStatusText(usage) {
+function formatStatusText(usage, accountName) {
     if (!usage || typeof usage !== "object") {
-        return "$(pulse) Go ?";
+        return accountName ? `$(pulse) Go ? · ${accountName}` : "$(pulse) Go ?";
     }
     const m = pct(usage.monthly);
     const w = pct(usage.weekly);
@@ -184,7 +192,9 @@ function formatStatusText(usage) {
     if (r !== null) {
         parts.push(`5h${r}%`);
     }
-    return parts.length ? `$(dashboard) Go ${parts.join(" · ")}` : "$(dashboard) Go";
+    const body = parts.length ? parts.join(" · ") : "";
+    const acct = accountName ? ` · ${accountName}` : "";
+    return `$(dashboard) Go ${body}${acct}`.replace(/\s+/g, " ").trim();
 }
 
 function formatTooltip(snapshot) {
@@ -196,6 +206,7 @@ function formatTooltip(snapshot) {
     for (const ep of snapshot.endpoints) {
         lines.push("");
         lines.push(`${ep.label} (${ep.baseUrl})`);
+        lines.push(`  account: ${ep.accountName || "?"} (${ep.accountId || "?"})`);
         if (ep.error) {
             lines.push(`  error: ${ep.error}`);
             continue;
@@ -327,22 +338,27 @@ async function refreshQuota(reason) {
         const r = await fetchGoUsage(ep);
         results.push({
             label: ep.label,
+            proxyKey: ep.proxyKey,
+            accountName: ep.accountName,
+            accountId: ep.accountId,
             baseUrl: ep.baseUrl,
             usage: r.usage,
             error: r.error,
         });
         if (r.error) {
-            logger_1.logger.warn(`Go usage fetch failed for ${ep.label}: ${r.error}`);
+            logger_1.logger.warn(
+                `Go usage fetch failed for ${ep.label}/${ep.accountName}: ${r.error}`,
+            );
         }
     }
     lastQuotaSnapshot = { at: Date.now(), endpoints: results };
     const primary = results.find((x) => x.usage && !x.error) || results[0];
     if (statusBar) {
         if (primary?.error && !primary.usage) {
-            statusBar.text = "$(warning) Go usage err";
+            statusBar.text = `$(warning) Go err · ${primary.accountName || "?"}`;
         }
         else {
-            statusBar.text = formatStatusText(primary?.usage);
+            statusBar.text = formatStatusText(primary?.usage, primary?.accountName);
         }
         statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
@@ -354,7 +370,7 @@ async function refreshQuota(reason) {
         statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
     logger_1.logger.info(
-        `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage)}`,
+        `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.accountName)}`,
     );
     return lastQuotaSnapshot;
 }
@@ -417,6 +433,7 @@ async function showUsageDetail() {
         for (const ep of lastQuotaSnapshot.endpoints) {
             lines.push(`\n${ep.label}`);
             lines.push(`  ${ep.baseUrl}`);
+            lines.push(`  account: ${ep.accountName || "?"}  id=${ep.accountId || "?"}`);
             if (ep.error) {
                 lines.push(`  ERROR: ${ep.error}`);
                 continue;
@@ -466,7 +483,7 @@ async function showUsageDetail() {
 function startUsageMonitor(context) {
     extContext = context;
     statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBar.command = "unified-proxy-copilot.showUsage";
+    statusBar.command = "unified-proxy-copilot.usageStatusMenu";
     statusBar.name = "Unified Proxy Go Usage";
     statusBar.text = "$(dashboard) Go …";
     statusBar.tooltip = "Unified Proxy OpenCode usage";
@@ -477,6 +494,37 @@ function startUsageMonitor(context) {
         vscode.commands.registerCommand("unified-proxy-copilot.refreshUsage", async () => {
             await refreshQuota("manual");
             void vscode.window.showInformationMessage("Unified Proxy: usage refreshed");
+        }),
+        vscode.commands.registerCommand("unified-proxy-copilot.usageStatusMenu", async () => {
+            const account_manager_1 = require("./account_manager");
+            const multi = account_manager_1.listMultiAccountProxies();
+            const items = [
+                { label: "$(graph) Show Usage", id: "show" },
+                { label: "$(refresh) Refresh Usage", id: "refresh" },
+            ];
+            if (multi.length) {
+                items.push({
+                    label: "$(account) Switch Account…",
+                    description: "manual / overrides rotate until next tick",
+                    id: "switch",
+                });
+            }
+            const pick = await vscode.window.showQuickPick(items, {
+                title: "Unified Proxy — Usage / Account",
+            });
+            if (!pick) {
+                return;
+            }
+            if (pick.id === "show") {
+                await showUsageDetail();
+            }
+            else if (pick.id === "refresh") {
+                await refreshQuota("manual");
+            }
+            else if (pick.id === "switch") {
+                await account_manager_1.pickAndSwitchAccount();
+                await refreshQuota("after-switch");
+            }
         }),
     );
 
