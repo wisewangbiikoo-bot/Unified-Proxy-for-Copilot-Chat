@@ -1,0 +1,29 @@
+---
+description: 每次功能/行为变更必须同步文档与版本号（Unified Proxy）
+alwaysApply: true
+---
+
+# 发布纪律：文档 + 版本号
+
+凡改动本扩展的**用户可见行为、配置字段、默认值、自动探测逻辑**，交付前必须同一轮做完：
+
+## 1. 版本号
+- 递增 `package.json` 的 `version`（按 semver：行为变更至少 patch；破坏性/大功能用 minor）
+- 在 `changelog.md` 顶部新增对应版本条目（Added / Changed / Fixed / Docs）
+
+## 2. 文档（有关章节都要改，禁止只改一处）
+至少检查并按需更新：
+- `readme.md`（英文功能列表）
+- `README.zh-cn.md`（功能列表 + 配置字段表）
+- `docs/WHY_UNIFIED_PROXY.md`
+- `docs/WHY_UNIFIED_PROXY.zh-cn.md`
+
+字段默认值、省略/`0` 自动探测、仅内存不回写、强制关闭写法（`false`/`off`）等约定变更时，**四份文档相关段落必须一致**，不要只更新中文 README。
+
+## 3. 安装包与仓库（用户要求发布时）
+- `vsce package` 产出 `unified-proxy-copilot-<version>.vsix`
+- 提交、推送 `main`，`gh release create vX.Y.Z` 并附带 vsix
+
+## 禁止
+- 只改 `out/` 代码不 bump 版本、不写 changelog
+- 只改 `README.zh-cn.md` 而英文/WHY 仍写旧默认值或旧语义
