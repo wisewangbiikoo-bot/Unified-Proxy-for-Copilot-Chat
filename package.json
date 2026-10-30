@@ -3,7 +3,7 @@
 	"displayName": "Unified Proxy for Copilot Chat",
 	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.8.2 (+ selected 0.9.x fixes); OpenCode Go session headers + usage status bar.",
 	"icon": "resources/icon.png",
-	"version": "1.4.1",
+	"version": "1.4.2",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {
@@ -201,12 +201,19 @@
 					],
 					"markdownDescription": "Status bar for OpenCode Go quota (`GET …/v1/usage`: rolling / weekly / monthly %). Click opens **Show Usage**."
 				},
+				"unified-proxy-copilot.usageRefreshEveryNRequests": {
+					"type": "number",
+					"default": 3,
+					"minimum": 1,
+					"maximum": 50,
+					"markdownDescription": "Refresh OpenCode Go quota immediately after this many chat API completions that report `usage` (tool loops count as multiple). Also refreshes ~1.2s after the last request in a burst (end of a turn)."
+				},
 				"unified-proxy-copilot.usagePollMinutes": {
 					"type": "number",
-					"default": 5,
-					"minimum": 1,
-					"maximum": 120,
-					"markdownDescription": "How often to refresh OpenCode Go quota in the status bar (minutes). Also refreshes shortly after a chat that reports usage, and when the VS Code window regains focus."
+					"default": 0,
+					"minimum": 0,
+					"maximum": 180,
+					"markdownDescription": "Optional backup time-based poll (minutes). **0 = off** (recommended). Primary refresh is request-driven: after conversation idle, or every `usageRefreshEveryNRequests` API usages."
 				}
 			}
 		}

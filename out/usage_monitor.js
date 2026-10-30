@@ -19,7 +19,10 @@ const no_proxy_1 = require("./no_proxy");
 
 const CONFIG_SECTION = "unified-proxy-copilot";
 const LOCAL_USAGE_KEY = "unified-proxy-copilot.localTokenUsage";
-const DEFAULT_POLL_MINUTES = 5;
+/** 0 = disable time-based poll (preferred; refresh is request-driven). */
+const DEFAULT_POLL_MINUTES = 0;
+/** After a burst of tool/API rounds goes quiet, treat as end of a "big" turn. */
+const IDLE_REFRESH_MS = 1200;
 const FETCH_TIMEOUT_MS = 15000;
 
 /** @type {vscode.ExtensionContext|null} */
@@ -30,6 +33,8 @@ let statusBar = null;
 let pollTimer = null;
 /** @type {NodeJS.Timeout|null} */
 let chatRefreshTimer = null;
+/** API chat completions with usage since last successful quota refresh. */
+let forwardsSinceRefresh = 0;
 /** @type {{ at: number, endpoints: Array<{ label: string, baseUrl: string, usage: any, error?: string }> }|null} */
 let lastQuotaSnapshot = null;
 
@@ -48,15 +53,27 @@ function getShowMode() {
     return "auto";
 }
 
+/** @returns {number} ms, or 0 to disable interval poll */
 function getPollMs() {
     const n = Number(
         vscode.workspace.getConfiguration(CONFIG_SECTION).get("usagePollMinutes") ??
             DEFAULT_POLL_MINUTES,
     );
     if (!Number.isFinite(n) || n <= 0) {
-        return DEFAULT_POLL_MINUTES * 60 * 1000;
+        return 0;
     }
-    return Math.max(1, Math.min(120, Math.floor(n))) * 60 * 1000;
+    return Math.max(1, Math.min(180, Math.floor(n))) * 60 * 1000;
+}
+
+/** Refresh immediately once this many chat API usage events accumulate. */
+function getRefreshEveryN() {
+    const n = Number(
+        vscode.workspace.getConfiguration(CONFIG_SECTION).get("usageRefreshEveryNRequests") ?? 3,
+    );
+    if (!Number.isFinite(n) || n <= 0) {
+        return 3;
+    }
+    return Math.max(1, Math.min(50, Math.floor(n)));
 }
 
 /**
@@ -199,8 +216,18 @@ function formatTooltip(snapshot) {
         lines.push("");
         lines.push(`Updated: ${new Date(snapshot.at).toLocaleString()}`);
     }
-    const pollMin = Math.round(getPollMs() / 60000);
-    lines.push(`Auto-refresh: every ${pollMin} min · after chat · on window focus`);
+    const pollMs = getPollMs();
+    const everyN = getRefreshEveryN();
+    if (pollMs > 0) {
+        lines.push(`Backup poll: every ${Math.round(pollMs / 60000)} min`);
+    }
+    else {
+        lines.push("Backup poll: off (request-driven)");
+    }
+    lines.push(
+        `Auto-refresh: after conversation idle (~${IDLE_REFRESH_MS}ms) · every ${everyN} API usage events · on focus`,
+    );
+    lines.push(`Pending API events since last refresh: ${forwardsSinceRefresh}`);
     lines.push("Click: Show Usage · Command: Refresh Usage");
     return lines.join("\n");
 }
@@ -320,6 +347,12 @@ async function refreshQuota(reason) {
         statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
     updateStatusBarVisibility(true, Boolean(primary?.error));
+    if (!primary?.error || primary?.usage) {
+        forwardsSinceRefresh = 0;
+    }
+    if (statusBar && lastQuotaSnapshot) {
+        statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
+    }
     logger_1.logger.info(
         `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage)}`,
     );
@@ -334,22 +367,42 @@ function schedulePoll() {
     if (getShowMode() === "off") {
         return;
     }
+    const ms = getPollMs();
+    if (ms <= 0) {
+        return;
+    }
     pollTimer = setInterval(() => {
         void refreshQuota("poll");
-    }, getPollMs());
+    }, ms);
 }
 
+/**
+ * Called after each upstream chat completion that reported usage (one API forward).
+ * - Idle debounce ≈ end of a multi-tool "big" turn → refresh once
+ * - Every N usage events → refresh immediately (mid-turn safety)
+ */
 function notifyChatUsage() {
     if (getShowMode() === "off") {
+        return;
+    }
+    forwardsSinceRefresh += 1;
+    const everyN = getRefreshEveryN();
+    if (forwardsSinceRefresh >= everyN) {
+        if (chatRefreshTimer) {
+            clearTimeout(chatRefreshTimer);
+            chatRefreshTimer = null;
+        }
+        void refreshQuota(`every-${everyN}-requests`);
         return;
     }
     if (chatRefreshTimer) {
         clearTimeout(chatRefreshTimer);
     }
-    // Debounce: many tool rounds → one refresh
+    // Quiet period after last API ≈ end of agent turn / "大对话"
     chatRefreshTimer = setTimeout(() => {
-        void refreshQuota("after-chat");
-    }, 2500);
+        chatRefreshTimer = null;
+        void refreshQuota("after-conversation-idle");
+    }, IDLE_REFRESH_MS);
 }
 
 async function showUsageDetail() {
@@ -431,14 +484,16 @@ function startUsageMonitor(context) {
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (
                 e.affectsConfiguration(`${CONFIG_SECTION}.showUsageStatusBar`) ||
-                e.affectsConfiguration(`${CONFIG_SECTION}.usagePollMinutes`)
+                e.affectsConfiguration(`${CONFIG_SECTION}.usagePollMinutes`) ||
+                e.affectsConfiguration(`${CONFIG_SECTION}.usageRefreshEveryNRequests`)
             ) {
                 schedulePoll();
                 void refreshQuota("config-change");
             }
         }),
         vscode.window.onDidChangeWindowState((state) => {
-            if (state.focused && getShowMode() !== "off") {
+            // Optional catch-up when returning to the window (not the primary trigger).
+            if (state.focused && getShowMode() !== "off" && forwardsSinceRefresh > 0) {
                 void refreshQuota("window-focus");
             }
         }),

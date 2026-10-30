@@ -28,7 +28,7 @@
 2. **`proxy_configs.json` 驱动**：默认路径 `%USERPROFILE%\.vscode\proxy_configs.json`（可通过设置 `unified-proxy-copilot.proxyConfigPath` 覆盖）。
 3. **按模型可选参数**：图片支持（0/1/2 三档）、上下文窗口、最大输出、温度、思考模式默认值。
 4. **上游 `/v1/models` 自动探测**（v1.3.3–1.3.5）：省略或写 **`0`** 的 `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` 会按 OpenCode 风格目录自动填充；**仅内存、不回写配置**；强制关闭用 `false`/`off`。见下方「可选字段」表。
-5. **OpenCode Go 用量**（v1.4.0+）：状态栏显示 `GET …/v1/usage` 的 5 小时 / 周 / 月配额百分比；**自动刷新**（默认每 5 分钟、聊天后防抖、窗口重新聚焦）；命令 **Show Usage** / **Refresh Usage**；本机按日累计聊天 token（`globalState`）。设置：`showUsageStatusBar`（`auto`/`always`/`off`）、`usagePollMinutes`。
+5. **OpenCode Go 用量**（v1.4.0+）：状态栏显示 `GET …/v1/usage` 的 5 小时 / 周 / 月配额百分比。**请求驱动刷新**（v1.4.2）：一轮对话 API 停歇约 1.2s 后刷新，或累计 `usageRefreshEveryNRequests`（默认 3）次带 usage 的转发后立即刷新；定时轮询默认关（`usagePollMinutes=0`）。命令 **Show Usage** / **Refresh Usage**。
 6. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
 7. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
 8. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
@@ -205,7 +205,8 @@
 | `unified-proxy-copilot.openCodeSessionId` | `local-openai-forward-affinity-v1` | `x-opencode-session` 的不透明值（可改） |
 | `unified-proxy-copilot.debugMode` | `minimal` | 诊断级别，行为同原版 |
 | `unified-proxy-copilot.showUsageStatusBar` | `auto` | OpenCode Go 用量状态栏：`auto`（有 Go 端点才显示）/ `always` / `off` |
-| `unified-proxy-copilot.usagePollMinutes` | `5` | 配额轮询间隔（分钟）；另：聊天后防抖刷新、窗口重新聚焦时刷新 |
+| `unified-proxy-copilot.usageRefreshEveryNRequests` | `3` | 累计多少次带 `usage` 的聊天 API 后立即刷配额 |
+| `unified-proxy-copilot.usagePollMinutes` | `0` | 可选定时备份轮询（分钟）；**0=关闭**（推荐，主路径为请求驱动） |
 | `unified-proxy-copilot.experimental.stabilizeToolList` | `false` | 实验性稳定工具列表，参见原版说明 |
 
 更多设置项（视觉代理、调试 dump 等）请参阅 **DeepSeek V4 for Copilot Chat v0.8.2**。

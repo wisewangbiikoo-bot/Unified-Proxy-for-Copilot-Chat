@@ -2,6 +2,16 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.4.2] — 2026-10-30
+
+### Changed
+
+* **Request-driven usage refresh** (replaces short interval polling as primary):
+  * After a chat/API burst goes idle (~1.2s) → refresh once (end of a turn / “大对话”)
+  * Every `usageRefreshEveryNRequests` usage events (default **3**) → refresh immediately
+  * `usagePollMinutes` default **0 = off** (optional backup only)
+  * Window focus only refreshes if there were pending API events
+
 ## [1.4.1] — 2026-10-30
 
 ### Changed
