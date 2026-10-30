@@ -48,6 +48,13 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
             } catch (e) {
                 logger_1.logger.warn('Failed to report usage to Copilot context', e);
             }
+            try {
+                const usage_monitor_1 = require("../usage_monitor");
+                usage_monitor_1.recordLocalTokenUsage(usage, prepared.request?.model);
+                usage_monitor_1.notifyChatUsage();
+            } catch (e) {
+                logger_1.logger.warn('Failed to record local usage', e);
+            }
         },
     }, token)
         .then(undefined, (error) => {

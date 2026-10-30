@@ -35,6 +35,7 @@ Inherited from upstream v0.8.2:
 - **Thinking modes** — Off / Standard / Deep (Copilot-native menu); per-model defaults in JSON
 - **Vision proxy** — describe images via another Copilot model when the backend is text-only
 - **Reasoning replay, token usage** — same family of behavior as upstream (see upstream docs)
+- **OpenCode Go quota bar** (v1.4.0) — status bar + Show/Refresh Usage from official `GET …/v1/usage`; local daily token totals in `globalState`
 
 Many “OpenAI Compatible Copilot” extensions focus on **listing models**; this extension keeps the **agent + tools** stack from DeepSeek V4.
 

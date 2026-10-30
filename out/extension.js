@@ -13,9 +13,12 @@ const logger_1 = require("./logger");
 const provider_1 = require("./provider");
 const dump_1 = require("./provider/dump");
 const no_proxy_1 = require("./no_proxy");
+const usage_monitor_1 = require("./usage_monitor");
 const fs = require("fs");
 let activeProvider;
 let configWatchPath;
+/** @type {{ refresh: Function, onConfigReloaded: Function }|null} */
+let usageMonitorApi = null;
 function reloadModelsFromConfig(notify = false) {
     (0, no_proxy_1.applyNoProxyBypass)();
     const consts = require("./consts");
@@ -49,6 +52,7 @@ function reloadModelsFromConfig(notify = false) {
         .catch((err) => {
         logger_1.logger.warn('Upstream limit enrichment failed', err);
     });
+    usageMonitorApi?.onConfigReloaded?.();
 }
 function watchProxyConfigFile(context) {
     const proxy_config_loader_1 = require("./proxy_config_loader");
@@ -112,6 +116,7 @@ async function activate(context) {
         }
         reloadModelsFromConfig(false);
         watchProxyConfigFile(context);
+        usageMonitorApi = (0, usage_monitor_1.startUsageMonitor)(context);
         void showWelcomeIfNeeded(context, provider).catch((error) => {
             logger_1.logger.warn((0, i18n_1.t)('extension.welcomeFailed'), error);
         });

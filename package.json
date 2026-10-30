@@ -1,9 +1,9 @@
 {
 	"name": "unified-proxy-copilot",
 	"displayName": "Unified Proxy for Copilot Chat",
-	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.8.2 (+ selected 0.9.x fixes); OpenCode Go x-opencode-session supported.",
+	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. Based on DeepSeek V4 for Copilot Chat v0.8.2 (+ selected 0.9.x fixes); OpenCode Go session headers + usage status bar.",
 	"icon": "resources/icon.png",
-	"version": "1.3.6",
+	"version": "1.4.0",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {
@@ -82,6 +82,14 @@
 			{
 				"command": "unified-proxy-copilot.reloadConfig",
 				"title": "Unified Proxy: Reload Config"
+			},
+			{
+				"command": "unified-proxy-copilot.showUsage",
+				"title": "Unified Proxy: Show Usage"
+			},
+			{
+				"command": "unified-proxy-copilot.refreshUsage",
+				"title": "Unified Proxy: Refresh Usage"
 			}
 		],
 		"walkthroughs": [
@@ -172,6 +180,33 @@
 						"⚠️ Contains sensitive prompt content. For local debugging only."
 					],
 					"markdownDescription": "Controls what diagnostic information is logged."
+				},
+				"unified-proxy-copilot.showUsageStatusBar": {
+					"type": "string",
+					"default": "auto",
+					"enum": [
+						"auto",
+						"always",
+						"off"
+					],
+					"enumItemLabels": [
+						"Auto (OpenCode Go)",
+						"Always",
+						"Off"
+					],
+					"markdownEnumDescriptions": [
+						"Show status bar when `proxy_configs.json` has an OpenCode Go (`opencode.ai` / `/zen/go`) endpoint.",
+						"Always show the usage status bar.",
+						"Hide the status bar (commands still work)."
+					],
+					"markdownDescription": "Status bar for OpenCode Go quota (`GET …/v1/usage`: rolling / weekly / monthly %). Click opens **Show Usage**."
+				},
+				"unified-proxy-copilot.usagePollMinutes": {
+					"type": "number",
+					"default": 10,
+					"minimum": 1,
+					"maximum": 120,
+					"markdownDescription": "How often to refresh OpenCode Go quota in the status bar (minutes). Also refreshes shortly after a chat that reports usage."
 				}
 			}
 		}

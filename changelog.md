@@ -2,6 +2,19 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.4.0] — 2026-10-30
+
+### Added
+
+* **OpenCode Go usage status bar** — polls `GET {base_url}/usage` for rolling (5h) /
+  weekly / monthly `percent`; tooltip shows `resetsAt`. Setting
+  `showUsageStatusBar`: `auto` | `always` | `off`; `usagePollMinutes` (default 10).
+* **Commands** — `Unified Proxy: Show Usage` (quota + today's local token totals),
+  `Unified Proxy: Refresh Usage`.
+* **Local token totals** — accumulate prompt/completion from chat stream `usage`
+  into `globalState` (per day / per model; not written to `proxy_configs.json`).
+  Debounced quota refresh after chats that report usage.
+
 ## [1.3.6] — 2026-10-30
 
 ### Docs

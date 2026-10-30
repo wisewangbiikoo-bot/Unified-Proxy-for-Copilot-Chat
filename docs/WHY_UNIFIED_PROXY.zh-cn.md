@@ -28,13 +28,14 @@
 
 ### 2. 继承 DeepSeek V4 的 Copilot 深度集成（不只是「能聊天」）
 
-基于上游 v0.8.2，保留并沿用其成熟能力：
+基于上游 v0.8.2，保留并沿用其成熟能力（另含本插件 v1.4.0：**OpenCode Go 配额状态栏** + Show/Refresh Usage，数据来自官方 `GET …/v1/usage`；本机按日 token 累计仅存 `globalState`）：
 
 - **Agent 模式**：文件编辑、终端、搜索、Git、测试、MCP、Skills 等
 - **工具调用**：完整 Copilot 工具链；并对 schema 做**规范化**，适配 Kiro-go 等自建网关
 - **思考模式**：停用 / 标准 / 深度，与 Copilot 模型菜单一致；可在配置里设每模型默认档
 - **视觉代理**：文本模型不支持图片时，可经其它 Copilot 模型描述附件后再转发
 - **推理 replay、Token 用量** 等与上游一致的行为（详见上游文档）
+- **OpenCode Go 配额状态栏**（v1.4.0）：官方 `GET …/v1/usage`；命令 Show/Refresh Usage；本机按日 token 累计在 `globalState`
 
 许多「OpenAI Compatible Copilot」类扩展主要解决**接入模型选择器**；本插件在 **Agent + 工具链** 上与 DeepSeek V4 同一代实现。
 
