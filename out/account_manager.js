@@ -97,6 +97,7 @@ function parseAccountsFromProxy(proxy, proxyKey) {
                     id: `key-${i + 1}`,
                     name: `账号${i + 1}`,
                     api_key: item.trim(),
+                    autoNamed: true,
                 });
                 return;
             }
@@ -106,18 +107,22 @@ function parseAccountsFromProxy(proxy, proxyKey) {
                     return;
                 }
                 const id = String(item.id || item.name || `key-${i + 1}`).trim() || `key-${i + 1}`;
+                const hasLabel = Boolean(item.name || item.label);
                 const name = String(item.name || item.label || id).trim() || id;
-                accounts.push({ id, name, api_key: key });
+                accounts.push({ id, name, api_key: key, autoNamed: !hasLabel });
             }
         });
     }
     if (!accounts.length) {
         const legacy = String(proxy?.api_key || proxy?.apiKey || "").trim();
         if (legacy) {
+            // Do NOT use proxy.name (often a model label). OpenCode identity
+            // comes from console/api/go/status later; placeholder until then.
             accounts.push({
                 id: "default",
-                name: proxy?.name || proxyKey || "default",
+                name: maskApiKey(legacy) || "opencode-account",
                 api_key: legacy,
+                autoNamed: true,
             });
         }
     }

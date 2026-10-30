@@ -2,12 +2,21 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.5.1] — 2026-10-30
+
+### Fixed
+
+* **Usage account label is OpenCode Go identity**, not proxy/model name.
+  Fetches `GET https://opencode.ai/console/api/go/status` → `subscriberUserId`
+  (e.g. status `Go 月20% · user_…35E4PN`). Official `/v1/usage` has no account
+  name/email. Optional local `accounts[].name` only as alias in details.
+
 ## [1.5.0] — 2026-10-30
 
 ### Added
 
-* **Usage shows account** — status bar / Show Usage include active account name
-  (e.g. `Go 月20% · 主号`).
+* **Usage shows account** — status bar / Show Usage include account label
+  (corrected in 1.5.1 to OpenCode `subscriberUserId`, not model name).
 * **Multi-account per proxy** — optional `accounts: [{ id, name, api_key }, …]` plus
   `account_switch: { mode: "manual"|"rotate", rotate_minutes: 5 }`.
   * **manual (default)**: command **Switch Account**, or status-bar menu → Switch Account

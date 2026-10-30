@@ -3,7 +3,7 @@
 	"displayName": "Unified Proxy for Copilot Chat",
 	"description": "Route Copilot Chat to multiple OpenAI-compatible backends via proxy_configs.json. OpenCode Go session headers, usage status bar with account label, multi-API-key switch/rotate.",
 	"icon": "resources/icon.png",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {

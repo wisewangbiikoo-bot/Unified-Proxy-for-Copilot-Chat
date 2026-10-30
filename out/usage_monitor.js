@@ -106,7 +106,9 @@ function collectOpenCodeEndpoints() {
         if (!apiKey) {
             continue;
         }
-        const accountName = resolved.account?.name || "default";
+        const localAlias = resolved.account?.autoNamed
+            ? ""
+            : String(resolved.account?.name || "").trim();
         const accountId = resolved.account?.id || "default";
         const dedupe = `${String(apiKey).slice(0, 40)}|${String(baseUrl).replace(/\/$/, "")}`;
         if (seen.has(dedupe)) {
@@ -116,7 +118,7 @@ function collectOpenCodeEndpoints() {
         out.push({
             label: proxy.name || key,
             proxyKey: key,
-            accountName,
+            localAlias,
             accountId,
             baseUrl: String(baseUrl).replace(/\/$/, ""),
             apiKey: String(apiKey),
@@ -130,6 +132,83 @@ function collectOpenCodeEndpoints() {
 function usageUrl(baseUrl) {
     // base is .../v1 → .../v1/usage
     return `${String(baseUrl).replace(/\/$/, "")}/usage`;
+}
+
+/** @type {Map<string, { at: number, subscriberUserId?: string, product?: string, shortLabel?: string, error?: string }>} */
+const identityCache = new Map();
+const IDENTITY_TTL_MS = 30 * 60 * 1000;
+
+/** Short OpenCode account label from subscriberUserId (not model/proxy name). */
+function shortOpenCodeAccountId(subscriberUserId) {
+    const id = String(subscriberUserId || "").trim();
+    if (!id) {
+        return "";
+    }
+    // user_01M30WW6EEX88J38HZ2N35E4PN → user_…35E4PN
+    if (id.length <= 14) {
+        return id;
+    }
+    return `${id.slice(0, 5)}…${id.slice(-6)}`;
+}
+
+/**
+ * OpenCode Go account identity via Console API (Bearer oc_sk_).
+ * /zen/go/v1/usage has no account name; go/status returns subscriberUserId.
+ * @returns {Promise<{ subscriberUserId?: string, product?: string, shortLabel: string, error?: string }>}
+ */
+async function fetchGoAccountIdentity(apiKey) {
+    const cacheKey = String(apiKey || "").slice(0, 48);
+    const hit = identityCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < IDENTITY_TTL_MS) {
+        return hit;
+    }
+    (0, no_proxy_1.applyNoProxyBypass)();
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+    try {
+        const resp = await fetch("https://opencode.ai/console/api/go/status", {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                Accept: "application/json",
+            },
+            signal: ac.signal,
+        });
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => "");
+            const err = {
+                at: Date.now(),
+                shortLabel: "",
+                error: `HTTP ${resp.status} ${text.slice(0, 80)}`,
+            };
+            identityCache.set(cacheKey, err);
+            return err;
+        }
+        const body = await resp.json();
+        const subscriberUserId = body?.subscriberUserId || body?.subscriber_user_id || "";
+        const product = body?.product || body?.renewalProduct || "go";
+        const shortLabel = shortOpenCodeAccountId(subscriberUserId) || product;
+        const out = {
+            at: Date.now(),
+            subscriberUserId,
+            product,
+            shortLabel,
+        };
+        identityCache.set(cacheKey, out);
+        return out;
+    }
+    catch (e) {
+        const err = {
+            at: Date.now(),
+            shortLabel: "",
+            error: e?.message || String(e),
+        };
+        identityCache.set(cacheKey, err);
+        return err;
+    }
+    finally {
+        clearTimeout(timer);
+    }
 }
 
 /**
@@ -175,9 +254,11 @@ function pct(window) {
     return Number.isFinite(n) ? n : null;
 }
 
-function formatStatusText(usage, accountName) {
+function formatStatusText(usage, openCodeAccountLabel) {
     if (!usage || typeof usage !== "object") {
-        return accountName ? `$(pulse) Go ? · ${accountName}` : "$(pulse) Go ?";
+        return openCodeAccountLabel
+            ? `$(pulse) Go ? · ${openCodeAccountLabel}`
+            : "$(pulse) Go ?";
     }
     const m = pct(usage.monthly);
     const w = pct(usage.weekly);
@@ -193,7 +274,7 @@ function formatStatusText(usage, accountName) {
         parts.push(`5h${r}%`);
     }
     const body = parts.length ? parts.join(" · ") : "";
-    const acct = accountName ? ` · ${accountName}` : "";
+    const acct = openCodeAccountLabel ? ` · ${openCodeAccountLabel}` : "";
     return `$(dashboard) Go ${body}${acct}`.replace(/\s+/g, " ").trim();
 }
 
@@ -206,7 +287,15 @@ function formatTooltip(snapshot) {
     for (const ep of snapshot.endpoints) {
         lines.push("");
         lines.push(`${ep.label} (${ep.baseUrl})`);
-        lines.push(`  account: ${ep.accountName || "?"} (${ep.accountId || "?"})`);
+        lines.push(
+            `  OpenCode account: ${ep.openCodeAccountId || ep.openCodeAccountLabel || "?"}`,
+        );
+        if (ep.openCodeProduct) {
+            lines.push(`  product: ${ep.openCodeProduct}`);
+        }
+        if (ep.localAlias) {
+            lines.push(`  local alias: ${ep.localAlias}`);
+        }
         if (ep.error) {
             lines.push(`  error: ${ep.error}`);
             continue;
@@ -335,19 +424,32 @@ async function refreshQuota(reason) {
 
     const results = [];
     for (const ep of endpoints) {
-        const r = await fetchGoUsage(ep);
+        const [r, idn] = await Promise.all([
+            fetchGoUsage(ep),
+            fetchGoAccountIdentity(ep.apiKey),
+        ]);
+        const openCodeAccountLabel = idn.shortLabel || "";
         results.push({
             label: ep.label,
             proxyKey: ep.proxyKey,
-            accountName: ep.accountName,
+            localAlias: ep.localAlias || "",
             accountId: ep.accountId,
+            openCodeAccountId: idn.subscriberUserId || "",
+            openCodeAccountLabel,
+            openCodeProduct: idn.product || "",
+            identityError: idn.error || "",
             baseUrl: ep.baseUrl,
             usage: r.usage,
             error: r.error,
         });
         if (r.error) {
             logger_1.logger.warn(
-                `Go usage fetch failed for ${ep.label}/${ep.accountName}: ${r.error}`,
+                `Go usage fetch failed for ${ep.label}/${openCodeAccountLabel || "?"}: ${r.error}`,
+            );
+        }
+        if (idn.error) {
+            logger_1.logger.warn(
+                `Go identity fetch failed for ${ep.label}: ${idn.error}`,
             );
         }
     }
@@ -355,10 +457,13 @@ async function refreshQuota(reason) {
     const primary = results.find((x) => x.usage && !x.error) || results[0];
     if (statusBar) {
         if (primary?.error && !primary.usage) {
-            statusBar.text = `$(warning) Go err · ${primary.accountName || "?"}`;
+            statusBar.text = `$(warning) Go err · ${primary.openCodeAccountLabel || "?"}`;
         }
         else {
-            statusBar.text = formatStatusText(primary?.usage, primary?.accountName);
+            statusBar.text = formatStatusText(
+                primary?.usage,
+                primary?.openCodeAccountLabel,
+            );
         }
         statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
@@ -370,7 +475,7 @@ async function refreshQuota(reason) {
         statusBar.tooltip = formatTooltip(lastQuotaSnapshot);
     }
     logger_1.logger.info(
-        `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.accountName)}`,
+        `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.openCodeAccountLabel)} oc=${primary?.openCodeAccountId || "?"}`,
     );
     return lastQuotaSnapshot;
 }
@@ -433,7 +538,18 @@ async function showUsageDetail() {
         for (const ep of lastQuotaSnapshot.endpoints) {
             lines.push(`\n${ep.label}`);
             lines.push(`  ${ep.baseUrl}`);
-            lines.push(`  account: ${ep.accountName || "?"}  id=${ep.accountId || "?"}`);
+            lines.push(
+                `  OpenCode account: ${ep.openCodeAccountId || ep.openCodeAccountLabel || "?"}`,
+            );
+            if (ep.openCodeProduct) {
+                lines.push(`  product: ${ep.openCodeProduct}`);
+            }
+            if (ep.localAlias) {
+                lines.push(`  local alias: ${ep.localAlias}`);
+            }
+            if (ep.identityError) {
+                lines.push(`  identity error: ${ep.identityError}`);
+            }
             if (ep.error) {
                 lines.push(`  ERROR: ${ep.error}`);
                 continue;
