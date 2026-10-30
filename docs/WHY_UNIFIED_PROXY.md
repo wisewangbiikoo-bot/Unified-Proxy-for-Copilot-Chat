@@ -52,12 +52,14 @@ Each proxy entry supports (see `proxy_configs.json.example`):
 
 | Field | Purpose |
 |-------|---------|
-| `supports_images` | Vision-related handling on/off |
-| `supports_images` / `supports_tools` / `supports_thinking` | Omit to auto-fill from OpenCode `modalities` / `capabilities` |
-| `context_window_size` | Context window; omit to auto-fill from upstream `/v1/models` `limit.context` (fallback 128K) |
-| `max_output_tokens` | Cap output; omit to auto-fill from `limit.output` (fallback: unlimited) |
+| `supports_images` | `1`/`2` = describe / native; **omit or `0`** = auto from upstream `modalities` (force off: `false`/`off`) |
+| `supports_tools` / `supports_thinking` | **Omit or `0`** = auto from `capabilities`; force off with `false`/`off` |
+| `context_window_size` | **Omit or `0`** = auto from `/v1/models` `limit.context` (fallback 128K) |
+| `max_output_tokens` | **Omit or `0`** = auto from `limit.output` (fallback: unlimited) |
 | `temperature` | Sampling temperature |
-| `thinking_mode` | Default thinking level |
+| `thinking_mode` | Default thinking level (not auto-changed; only “supported?” is auto) |
+
+Auto-filled values stay **in memory only** (never written back to `proxy_configs.json`); re-probed on startup / Reload Config.
 
 ### 5. Clear privacy boundary
 

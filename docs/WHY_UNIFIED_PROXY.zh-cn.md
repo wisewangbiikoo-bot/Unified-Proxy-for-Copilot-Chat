@@ -54,12 +54,14 @@
 
 | 字段 | 作用 |
 |------|------|
-| `supports_images` | 视觉模式；省略时从上游 `modalities` 自动 `2`/`0`（`1` 描述代理需手写） |
-| `supports_tools` / `supports_thinking` | 省略时从上游 `capabilities.tools` / `reasoning` 自动填充 |
-| `context_window_size` | 上下文窗口；省略时从上游 `/v1/models` 的 `limit.context` 自动填充（失败则 128K） |
-| `max_output_tokens` | 最大输出；省略时从上游 `limit.output` 自动填充（失败则不限制） |
+| `supports_images` | `1`/`2`=描述/原生；**省略或 `0`**=按上游 `modalities` 自动；强制关用 `false`/`off` |
+| `supports_tools` / `supports_thinking` | **省略或 `0`**=按 `capabilities` 自动；强制关用 `false`/`off` |
+| `context_window_size` | **省略或 `0`**=按 `/v1/models` 的 `limit.context` 自动（失败则 128K） |
+| `max_output_tokens` | **省略或 `0`**=按 `limit.output` 自动（失败则不限制） |
 | `temperature` | 采样温度 |
-| `thinking_mode` | 默认思考档位（停用 / 标准 / 深度） |
+| `thinking_mode` | 默认思考档位（停用 / 标准 / 深度；不自动改默认档，只自动「是否支持」） |
+
+自动填充结果**只留在内存**，不回写 `proxy_configs.json`；每次启动 / Reload Config 重新探测。
 
 同一环境中的 Claude 网关、Gemini、DeepSeek 可使用不同默认，无需反复改 VS Code 全局项。
 

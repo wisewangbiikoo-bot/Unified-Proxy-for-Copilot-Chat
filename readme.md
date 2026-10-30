@@ -16,8 +16,7 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 
 - One Copilot model entry per proxy in `proxy_configs.json`
 - Per-model: images on/off (0/1/2), context window, max output, temperature, default thinking level
-- **Auto limits from `/v1/models`** (v1.3.3) — omit `context_window_size` / `max_output_tokens` to use upstream `limit.context` / `limit.output`
-- **Auto vision / tools / thinking** (v1.3.4) — omit `supports_images` / `supports_tools` / `supports_thinking` to use OpenCode `modalities` / `capabilities`
+- **Auto limits / vision / tools / thinking from `/v1/models`** (v1.3.3–1.3.5) — omit **or set `0`** on `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` to probe upstream (`limit`, `modalities`, `capabilities`). Memory-only (never writes `proxy_configs.json`); force off with `false`/`off` (not bare `0`). Details: [README.zh-cn.md](./README.zh-cn.md)
 - **Configurable vision proxy** (v1.1.0): each backend can specify its own vision source — VS Code LM, or an API endpoint (OpenAI Chat, Anthropic Messages, OpenAI Responses)
 - **Per-backend vision proxy** (v1.1.0): `vision_proxy` field in `proxy_configs.json` for per-model vision configuration
 - Tool-schema sanitization for OpenAI-compatible gateways

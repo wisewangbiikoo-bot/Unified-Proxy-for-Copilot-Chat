@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.6] — 2026-10-30
+
+### Docs
+
+* Synced **readme.md**, **README.zh-cn.md**, **WHY_UNIFIED_PROXY.md**,
+  **WHY_UNIFIED_PROXY.zh-cn.md** on auto-detect from `/v1/models`, omit-or-`0`,
+  memory-only behavior, and force-off via `false`/`off`.
+
 ## [1.3.5] — 2026-10-30
 
 ### Changed
