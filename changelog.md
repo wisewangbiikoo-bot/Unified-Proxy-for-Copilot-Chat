@@ -2,6 +2,32 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [1.3.4] — 2026-10-30
+
+### Added
+
+* **Auto vision / tools / thinking from upstream `/v1/models`** — when omitted:
+  * `supports_images` ← `modalities.input` contains `image/*` → native `2`, else `0`
+    (mode `1` describe-proxy is never auto; config-only)
+  * `supports_tools` ← `capabilities.tools.supported`
+  * `supports_thinking` (new optional field) ← `capabilities.reasoning.supported`
+  Explicit config always wins. Plain OpenAI catalogs without these fields keep
+  previous defaults (images off, tools/thinking on).
+  **Memory-only** — never writes back to `proxy_configs.json`; re-probes on each
+  startup / Reload Config.
+
+## [1.3.3] — 2026-10-30
+
+### Added
+
+* **Auto context / output limits from upstream `/v1/models`** — if a proxy entry
+  omits `context_window_size` and/or `max_output_tokens`, the extension GETs
+  `{base_url}/models` after load/reload and fills from OpenCode-style
+  `limit.context` / `limit.output` (also accepts common aliases such as
+  `context_window`, `max_model_len`, `max_output_tokens`). Explicit config values
+  always win. Failure falls back to previous defaults (128K context; unlimited
+  output). Results cached ~10 minutes per base URL.
+
 ## [1.3.2] — 2026-10-22
 
 ### Fixed

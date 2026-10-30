@@ -53,8 +53,9 @@ Each proxy entry supports (see `proxy_configs.json.example`):
 | Field | Purpose |
 |-------|---------|
 | `supports_images` | Vision-related handling on/off |
-| `context_window_size` | Context window (e.g. `128K` → 128000 in UI) |
-| `max_output_tokens` | Cap output; omit when unlimited |
+| `supports_images` / `supports_tools` / `supports_thinking` | Omit to auto-fill from OpenCode `modalities` / `capabilities` |
+| `context_window_size` | Context window; omit to auto-fill from upstream `/v1/models` `limit.context` (fallback 128K) |
+| `max_output_tokens` | Cap output; omit to auto-fill from `limit.output` (fallback: unlimited) |
 | `temperature` | Sampling temperature |
 | `thinking_mode` | Default thinking level |
 

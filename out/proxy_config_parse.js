@@ -40,11 +40,22 @@ const THINKING_DEEP = new Set(["max", "deep", "深度", "heavy", "重度", "高"
  * Missing optional fields use documented defaults.
  */
 function parseProxyEntry(proxy) {
+    const context = parseContextWindowSize(proxy);
+    const maxOut = parseMaxOutputTokens(proxy);
+    const images = parseSupportsImages(proxy);
+    const tools = parseSupportsTools(proxy);
+    const thinking = parseSupportsThinking(proxy);
     return {
-        supportsImages: parseSupportsImages(proxy),
-        supportsTools: parseSupportsTools(proxy),
-        contextWindowTokens: parseContextWindowSize(proxy),
-        maxOutputTokens: parseMaxOutputTokens(proxy),
+        supportsImages: images.value,
+        supportsImagesFromConfig: images.fromConfig,
+        supportsTools: tools.value,
+        supportsToolsFromConfig: tools.fromConfig,
+        supportsThinking: thinking.value,
+        supportsThinkingFromConfig: thinking.fromConfig,
+        contextWindowTokens: context.value,
+        contextWindowFromConfig: context.fromConfig,
+        maxOutputTokens: maxOut.value,
+        maxOutputFromConfig: maxOut.fromConfig,
         temperature: parseTemperature(proxy),
         thinkingMode: parseThinkingMode(proxy),
         visionProxy: parseVisionProxyConfig(proxy),
@@ -52,98 +63,147 @@ function parseProxyEntry(proxy) {
         openCodeSession: parseOpenCodeSessionOverride(proxy),
     };
 }
+/**
+ * @returns {{ value: boolean, fromConfig: boolean }}
+ * Default true until upstream says otherwise (OpenAI-compat gateways usually support tools).
+ */
 function parseSupportsTools(proxy) {
     const raw = proxy.supports_tools ?? proxy.supportsTools ?? proxy["Supports Tools"];
     if (raw === undefined || raw === null || raw === "") {
-        return true;
+        return { value: true, fromConfig: false };
     }
     if (typeof raw === "boolean") {
-        return raw;
+        return { value: raw, fromConfig: true };
     }
     if (typeof raw === "number") {
-        return raw === 1;
+        return { value: raw === 1, fromConfig: true };
     }
     const s = String(raw).trim().toLowerCase();
-    return s === "1" || s === "true" || s === "yes";
+    return {
+        value: s === "1" || s === "true" || s === "yes",
+        fromConfig: true,
+    };
 }
+/**
+ * Optional supports_thinking / supportsThinking. Default true (show thinking menu)
+ * until upstream capabilities.reasoning says otherwise.
+ * @returns {{ value: boolean, fromConfig: boolean }}
+ */
+function parseSupportsThinking(proxy) {
+    const raw =
+        proxy.supports_thinking ??
+        proxy.supportsThinking ??
+        proxy["Supports Thinking"];
+    if (raw === undefined || raw === null || raw === "") {
+        return { value: true, fromConfig: false };
+    }
+    if (typeof raw === "boolean") {
+        return { value: raw, fromConfig: true };
+    }
+    if (typeof raw === "number") {
+        return { value: raw === 1, fromConfig: true };
+    }
+    const s = String(raw).trim().toLowerCase();
+    if (s === "0" || s === "false" || s === "no" || s === "off" || s === "none") {
+        return { value: false, fromConfig: true };
+    }
+    return { value: true, fromConfig: true };
+}
+/**
+ * Modes: 0=off, 1=vision-proxy text describe, 2=native OpenAI image_url
+ * Omitted → fromConfig=false (may auto-set to 2/0 from upstream modalities).
+ * @returns {{ value: number, fromConfig: boolean }}
+ */
 function parseSupportsImages(proxy) {
     const raw = proxy.supports_images ?? proxy.supportsImages ?? proxy["Supports Images"];
-    // Modes: 0=off, 1=vision-proxy text describe, 2=native OpenAI image_url
     if (raw === undefined || raw === null || raw === "") {
-        return 0;
+        return { value: 0, fromConfig: false };
     }
     if (typeof raw === "boolean") {
         // Backward compat: true -> legacy describe path (1)
-        return raw ? 1 : 0;
+        return { value: raw ? 1 : 0, fromConfig: true };
     }
     if (typeof raw === "number" && Number.isFinite(raw)) {
         const n = Math.floor(raw);
         if (n <= 0) {
-            return 0;
+            return { value: 0, fromConfig: true };
         }
         if (n === 1) {
-            return 1;
+            return { value: 1, fromConfig: true };
         }
-        return 2;
+        return { value: 2, fromConfig: true };
     }
     const s = String(raw).trim().toLowerCase();
     if (s === "0" || s === "false" || s === "no" || s === "off" || s === "none") {
-        return 0;
+        return { value: 0, fromConfig: true };
     }
     if (s === "2" || s === "native" || s === "image_url" || s === "multimodal") {
-        return 2;
+        return { value: 2, fromConfig: true };
     }
     if (s === "1" || s === "true" || s === "yes" || s === "describe" || s === "proxy") {
-        return 1;
+        return { value: 1, fromConfig: true };
     }
     const n = Number(s);
     if (Number.isFinite(n)) {
         if (n <= 0) {
-            return 0;
+            return { value: 0, fromConfig: true };
         }
         if (n === 1) {
-            return 1;
+            return { value: 1, fromConfig: true };
         }
-        return 2;
+        return { value: 2, fromConfig: true };
     }
-    return 0;
+    return { value: 0, fromConfig: true };
 }
+/**
+ * @returns {{ value: number, fromConfig: boolean }}
+ * fromConfig=false → may be replaced by upstream /v1/models limit.context
+ */
 function parseContextWindowSize(proxy) {
     const raw = proxy.context_window_size ??
         proxy.contextWindowSize ??
         proxy["Context Window Size"];
     if (raw === undefined || raw === null || raw === "") {
-        return exports.DEFAULT_CONTEXT_WINDOW_TOKENS;
+        return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
     }
     if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
-        return Math.floor(raw);
+        return { value: Math.floor(raw), fromConfig: true };
     }
     const text = String(raw).trim().toUpperCase();
     const match = text.match(/^(\d+(?:\.\d+)?)\s*([KMG])?$/);
     if (!match) {
         const n = Number(text);
-        return Number.isFinite(n) && n > 0 ? Math.floor(n) : exports.DEFAULT_CONTEXT_WINDOW_TOKENS;
+        if (Number.isFinite(n) && n > 0) {
+            return { value: Math.floor(n), fromConfig: true };
+        }
+        return { value: exports.DEFAULT_CONTEXT_WINDOW_TOKENS, fromConfig: false };
     }
     const value = Number(match[1]);
     const unit = match[2];
     if (!unit) {
-        return value >= 1000 ? Math.floor(value) : Math.floor(value * 1000);
+        const n = value >= 1000 ? Math.floor(value) : Math.floor(value * 1000);
+        return { value: n, fromConfig: true };
     }
     const mult = unit === "K" ? 1000 : unit === "M" ? 1000 * 1000 : 1000 * 1000 * 1000;
-    return Math.floor(value * mult);
+    return { value: Math.floor(value * mult), fromConfig: true };
 }
+/**
+ * @returns {{ value: number|undefined, fromConfig: boolean }}
+ * fromConfig=false → may be replaced by upstream /v1/models limit.output
+ * Explicit 0 / negative → unlimited, but fromConfig=true (do not auto-fill)
+ */
 function parseMaxOutputTokens(proxy) {
     const raw = proxy.max_output_tokens ??
         proxy.maxOutputTokens ??
         proxy["Max Output Tokens"];
     if (raw === undefined || raw === null || raw === "") {
-        return exports.DEFAULT_MAX_OUTPUT_TOKENS;
+        return { value: exports.DEFAULT_MAX_OUTPUT_TOKENS, fromConfig: false };
     }
     const n = typeof raw === "number" ? raw : Number(String(raw).trim());
     if (!Number.isFinite(n) || n <= 0) {
-        return exports.DEFAULT_MAX_OUTPUT_TOKENS;
+        return { value: exports.DEFAULT_MAX_OUTPUT_TOKENS, fromConfig: true };
     }
-    return Math.floor(n);
+    return { value: Math.floor(n), fromConfig: true };
 }
 function parseTemperature(proxy) {
     const raw = proxy.temperature ?? proxy.Temperature;

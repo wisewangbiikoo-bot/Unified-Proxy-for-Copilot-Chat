@@ -54,9 +54,10 @@
 
 | 字段 | 作用 |
 |------|------|
-| `supports_images` | 是否启用视觉相关处理 |
-| `context_window_size` | 上下文窗口（如 `128K` → 128000，Copilot 显示为 128K） |
-| `max_output_tokens` | 最大输出；省略或无效值时不向 API 强行限制 |
+| `supports_images` | 视觉模式；省略时从上游 `modalities` 自动 `2`/`0`（`1` 描述代理需手写） |
+| `supports_tools` / `supports_thinking` | 省略时从上游 `capabilities.tools` / `reasoning` 自动填充 |
+| `context_window_size` | 上下文窗口；省略时从上游 `/v1/models` 的 `limit.context` 自动填充（失败则 128K） |
+| `max_output_tokens` | 最大输出；省略时从上游 `limit.output` 自动填充（失败则不限制） |
 | `temperature` | 采样温度 |
 | `thinking_mode` | 默认思考档位（停用 / 标准 / 深度） |
 

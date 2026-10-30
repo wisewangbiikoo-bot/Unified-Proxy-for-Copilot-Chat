@@ -21,6 +21,8 @@ function reloadModelsFromConfig(notify = false) {
     const consts = require("./consts");
     const proxy_config_loader_1 = require("./proxy_config_loader");
     const configPath = proxy_config_loader_1.getProxyConfigPath();
+    // Drop previous auto-filled limits so a config edit re-fetches cleanly.
+    proxy_config_loader_1.clearAutoLimitsOverrides();
     consts.MODELS.length = 0;
     consts.MODELS.push(...proxy_config_loader_1.loadModelsFromConfig());
     activeProvider?.refreshModelPicker();
@@ -33,6 +35,20 @@ function reloadModelsFromConfig(notify = false) {
     if (notify) {
         void vscode_1.default.window.showInformationMessage(`Reloaded ${consts.MODELS.length} models from config`);
     }
+    // Fill omitted context_window_size / max_output_tokens from upstream /v1/models.
+    void proxy_config_loader_1
+        .enrichModelsWithUpstreamLimits(consts.MODELS)
+        .then((changed) => {
+        if (!changed) {
+            return;
+        }
+        activeProvider?.refreshModelPicker();
+        void vscode_1.default.lm.selectChatModels({ vendor: 'unified-proxy' }).catch(() => { });
+        logger_1.logger.info('Model picker refreshed after upstream limit enrichment');
+    })
+        .catch((err) => {
+        logger_1.logger.warn('Upstream limit enrichment failed', err);
+    });
 }
 function watchProxyConfigFile(context) {
     const proxy_config_loader_1 = require("./proxy_config_loader");
