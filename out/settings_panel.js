@@ -1185,20 +1185,45 @@ function getHtml() {
     padding: 3px 0; gap: 8px; align-items: center;
   }
   .list-row:last-child { border-bottom: none; }
-  .list-main {
-    flex: 1 1 auto; min-width: 0; overflow: hidden;
-  }
+  .list-main { flex: 1 1 auto; min-width: 0; }
   .list-main .sub { margin: 0; }
-  /* Avoid mono word-break:break-all collapsing flex text to 1 character wide */
-  #autoPoolList .list-row {
-    display: flex; align-items: center; gap: 12px;
+  /* Grid — label+flex was clipping pool text to 0 width in webview */
+  #autoPoolList { width: 100%; }
+  #autoPoolList .pool-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20px;
+    align-items: center;
+    column-gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--vscode-widget-border, #333);
+    cursor: pointer;
   }
-  #autoPoolList .pool-name { font-weight: 600; line-height: 1.3; }
+  #autoPoolList .pool-row:last-child { border-bottom: none; }
+  #autoPoolList .pool-text { min-width: 0; display: block; }
+  #autoPoolList .pool-name {
+    display: block;
+    color: var(--vscode-foreground);
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
   #autoPoolList .pool-meta {
-    font-size: 0.8em; opacity: 0.7; line-height: 1.3; margin-top: 2px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: block;
+    margin-top: 2px;
+    font-size: 0.8em;
+    line-height: 1.3;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  #autoPoolList input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+  #autoPoolList .pool-row input[type="checkbox"] {
+    width: 16px; height: 16px; margin: 0; justify-self: end;
+  }
   .cat-line1 {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px;
     line-height: 1.25;
@@ -1538,22 +1563,22 @@ function getHtml() {
     const models = state.enabledModels || [];
     $('autoPoolList').innerHTML = models.length
       ? models.map(m =>
-          '<label class="list-row" style="cursor:pointer">' +
-            '<div class="list-main">' +
-              '<div class="pool-name">' + esc(m.name) + '</div>' +
-              '<div class="pool-meta" title="' + esc(m.providerName + ' · ' + m.modelId) + '">' +
-                esc(m.providerName) + ' · ' + esc(m.modelId) +
-              '</div></div>' +
+          '<label class="pool-row">' +
+            '<span class="pool-text">' +
+              '<span class="pool-name">' + esc(m.name || m.modelId || m.id) + '</span>' +
+              '<span class="pool-meta" title="' + esc((m.providerName || '') + ' · ' + (m.modelId || m.id)) + '">' +
+                esc(m.providerName || '') + ' · ' + esc(m.modelId || m.id) +
+              '</span></span>' +
             '<input type="checkbox" data-auto-id="' + esc(m.id) + '"' +
-            (selected.has(m.id) ? ' checked' : '') + ' /></label>'
+            (selected.has(m.id) ? ' checked' : '') + ' />' +
+          '</label>'
         ).join('')
       : '<div class="sub">请先在「模型」页启用至少一个模型。</div>';
     const poolModels = models.filter(m => selected.has(m.id));
     $('autoCurrent').innerHTML = poolModels.length
       ? poolModels.map(m =>
           '<option value="' + esc(m.id) + '"' +
-          (m.id === aa.current ? ' selected' : '') + '>' +
-          esc(m.name) + ' · ' + esc(m.providerName) + '</option>'
+          (m.id === aa.current ? ' selected' : '') + '>' + esc(m.name || m.modelId) + '</option>'
         ).join('')
       : '<option value="">（池为空）</option>';
   }

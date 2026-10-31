@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.11] — 2026-10-31
+
+### Fixed
+
+* **Auto-assign pool blank rows** — webview flex+`overflow:hidden` clipped all pool
+  text; switched to CSS grid so names/meta show beside checkboxes.
+
 ## [2.0.10] — 2026-10-31
 
 ### Fixed
