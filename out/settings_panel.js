@@ -802,13 +802,21 @@ async function refreshCatalog(providerId) {
             .filter((m) => m.provider_id === id && m.enabled)
             .map((m) => m.model_id),
     );
-    const items = list.map((x) => ({
-        id: x.id,
-        name: x.name,
-        enabled: enabledIds.has(x.id),
-        entryId: config_v2_1.makeModelId(id, x.id),
-        hasMeta: Boolean(x.meta),
-    }));
+    const items = list.map((x) => {
+        const meta = x.meta || null;
+        return {
+            id: x.id,
+            name: x.name,
+            enabled: enabledIds.has(x.id),
+            entryId: config_v2_1.makeModelId(id, x.id),
+            hasMeta: Boolean(meta),
+            context: meta?.context || null,
+            output: meta?.output || null,
+            vision: meta?.supportsNativeVision,
+            tools: meta?.supportsTools,
+            thinking: meta?.supportsThinking,
+        };
+    });
     return { ok: true, providerId: id, items };
 }
 
@@ -1058,8 +1066,24 @@ function getHtml() {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 8px 0; border-bottom: 1px solid var(--vscode-widget-border, #333);
   }
+  .list-row.catalog-row {
+    padding: 3px 0; gap: 8px; align-items: center;
+  }
   .list-row:last-child { border-bottom: none; }
   .list-main { min-width: 0; flex: 1; }
+  .cat-line1 {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px;
+    line-height: 1.25;
+  }
+  .cat-name { font-weight: 600; font-size: 0.9em; }
+  .cat-limit {
+    font-size: 0.75em; color: var(--vscode-descriptionForeground);
+    font-family: var(--vscode-editor-font-family, monospace);
+  }
+  .cat-id {
+    font-size: 0.72em; opacity: 0.65; line-height: 1.2; margin-top: 1px;
+    font-family: var(--vscode-editor-font-family, monospace);
+  }
   .tag {
     display: inline-block; font-size: 0.75em; opacity: 0.75;
     border: 1px solid var(--vscode-widget-border, #555); border-radius: 999px;
@@ -1069,12 +1093,15 @@ function getHtml() {
     width: 40px; height: 22px; border-radius: 999px; border: none; cursor: pointer;
     background: var(--vscode-input-background); position: relative; flex-shrink: 0;
   }
+  .switch.sm { width: 34px; height: 18px; }
   .switch.on { background: var(--vscode-testing-iconPassed, #3fb950); }
   .switch::after {
     content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
     border-radius: 50%; background: #fff; transition: left .15s;
   }
+  .switch.sm::after { width: 14px; height: 14px; top: 2px; left: 2px; }
   .switch.on::after { left: 20px; }
+  .switch.sm.on::after { left: 18px; }
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .toolbar input { flex: 1; }
   .banner {
@@ -1400,11 +1427,36 @@ function getHtml() {
       it.enabled = enabledSet.has(it.id);
     }
   }
+  function fmtTok(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return '';
+    if (v >= 1000000) {
+      const m = v / 1000000;
+      return (Number.isInteger(m) ? String(m) : m.toFixed(1).replace(/\\.0$/, '')) + 'M';
+    }
+    if (v >= 1000) return Math.round(v / 1000) + 'K';
+    return String(Math.floor(v));
+  }
+  function formatCatalogLimit(it) {
+    const parts = [];
+    const ctx = fmtTok(it.context);
+    const out = fmtTok(it.output);
+    if (ctx) parts.push('ctx ' + ctx);
+    if (out) parts.push('out ' + out);
+    if (it.vision === true) parts.push('视觉');
+    else if (it.vision === false) parts.push('无视觉');
+    if (it.tools === true) parts.push('工具');
+    else if (it.tools === false) parts.push('无工具');
+    if (it.thinking === true) parts.push('思考');
+    else if (it.thinking === false) parts.push('无思考');
+    return parts.length ? parts.join(' · ') : 'limit —';
+  }
   function renderCatalog() {
     syncCatalogEnabledFlags();
     const q = ($('modelSearch').value || '').trim().toLowerCase();
     const items = (state.catalog || []).filter(it =>
-      !q || it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q)
+      !q || it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q) ||
+      formatCatalogLimit(it).toLowerCase().includes(q)
     );
     const box = $('catalogList');
     if (!items.length) {
@@ -1412,10 +1464,12 @@ function getHtml() {
       return;
     }
     box.innerHTML = items.map(it =>
-      '<div class="list-row">' +
-        '<div class="list-main"><div>' + esc(it.name) + '</div>' +
-        '<div class="mono sub">' + esc(it.id) + '</div></div>' +
-        '<button type="button" class="switch' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
+      '<div class="list-row catalog-row">' +
+        '<div class="list-main">' +
+          '<div class="cat-line1"><span class="cat-name">' + esc(it.name) + '</span>' +
+          '<span class="cat-limit">' + esc(formatCatalogLimit(it)) + '</span></div>' +
+          '<div class="cat-id">' + esc(it.id) + '</div></div>' +
+        '<button type="button" class="switch sm' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
         '" data-name="' + esc(it.name) + '" title="' + (it.enabled ? '点击禁用' : '点击启用') + '"></button></div>'
     ).join('');
   }
