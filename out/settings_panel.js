@@ -1794,9 +1794,13 @@ function getHtml() {
   });
   $('accountMode').addEventListener('change', syncAccountModeUi);
   $('autoMode').addEventListener('change', syncAutoModeUi);
+  $('autoPoolList').addEventListener('change', (ev) => {
+    if (!ev.target || !ev.target.matches || !ev.target.matches('input[data-auto-id]')) return;
+    fillAutoCurrentSelect();
+    setStatus('池已改动，请点「保存自动分配」后生效');
+  });
   $('btnSaveAuto').addEventListener('click', () => {
-    const modelIds = [...document.querySelectorAll('#autoPoolList input[data-auto-id]:checked')]
-      .map(el => el.getAttribute('data-auto-id'));
+    const modelIds = checkedAutoModelIds();
     vscode.postMessage({
       type: 'saveAutoAssign',
       payload: {

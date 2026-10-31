@@ -2,12 +2,19 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.13] — 2026-10-31
+
+### Fixed
+
+* **Auto-assign checkbox → 当前选用** — wire `change` listener so newly checked models
+  (e.g. GLM-5.3) appear in the dropdown before Save; status reminds to save.
+
 ## [2.0.12] — 2026-10-31
 
 ### Fixed
 
-* **Auto-assign「当前选用」** — rebuild dropdown when pool checkboxes change; remind to
-  click Save (unchecked-until-saved items no longer missing from the selector silently).
+* **Auto-assign「当前选用」 helpers** — `fillAutoCurrentSelect` from live checkboxes;
+  help text notes Save is required.
 
 ## [2.0.11] — 2026-10-31
 
