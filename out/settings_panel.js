@@ -1365,6 +1365,8 @@ function getHtml() {
   .status { margin-top: 8px; min-height: 1.2em; color: var(--vscode-descriptionForeground); }
   .status.err { color: var(--vscode-errorForeground); }
   .status.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+  #catalogStatus { margin: 0 0 10px; }
+  #catalogStatus:empty { display: none; min-height: 0; margin: 0; }
   .hidden { display: none !important; }
   .model-title { font-weight: 600; }
   .list-row {
@@ -1601,6 +1603,7 @@ function getHtml() {
   <div class="panel" id="panel-models">
     <div class="card">
       <h2>模型发现</h2>
+      <div class="status" id="catalogStatus"></div>
       <div class="row">
         <label>供应商</label>
         <select id="catalogProvider"></select>
@@ -1689,6 +1692,13 @@ function getHtml() {
   const pendingToggles = new Set(); // modelId currently saving — ignore duplicate pointer events
   function setStatus(text, kind) {
     const el = $('status');
+    el.textContent = text || '';
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+  /** Catalog load/refresh messages — only visible on「模型」tab. */
+  function setCatalogStatus(text, kind) {
+    const el = $('catalogStatus');
+    if (!el) return;
     el.textContent = text || '';
     el.className = 'status' + (kind ? ' ' + kind : '');
   }
@@ -1869,7 +1879,7 @@ function getHtml() {
       renderCatalog();
       if (announce) {
         const when = formatCacheTime(packed.at);
-        setStatus(
+        setCatalogStatus(
           '已加载上次列表' + (when ? ' · ' + when : '') +
           ' · ' + state.catalog.length + ' 个（点刷新可更新）',
           'ok'
@@ -2123,7 +2133,7 @@ function getHtml() {
     loadCatalogForProvider(pid, true);
   });
   $('btnRefreshCatalog').addEventListener('click', () => {
-    setStatus('刷新模型目录…');
+    setCatalogStatus('刷新模型目录…');
     vscode.postMessage({ type: 'refreshCatalog', providerId: $('catalogProvider').value });
   });
   $('modelSearch').addEventListener('input', renderCatalog);
@@ -2227,7 +2237,7 @@ function getHtml() {
     }
     if (msg.type === 'catalog') {
       if (!msg.ok) {
-        setStatus(msg.error || '刷新失败', 'err');
+        setCatalogStatus(msg.error || '刷新失败', 'err');
         return;
       }
       const pid = msg.providerId || $('catalogProvider').value;
@@ -2237,7 +2247,7 @@ function getHtml() {
       state.catalogCache[pid] = { at: msg.cachedAt || Date.now(), items: state.catalog.map(x => Object.assign({}, x)) };
       syncCatalogEnabledFlags();
       renderCatalog();
-      setStatus('已刷新 ' + state.catalog.length + ' 个模型（已记住）', 'ok');
+      setCatalogStatus('已刷新 ' + state.catalog.length + ' 个模型（已记住）', 'ok');
     }
   });
   vscode.postMessage({ type: 'ready' });
