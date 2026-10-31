@@ -258,6 +258,31 @@ async function handleMessage(msg, opts) {
         }
         return;
     }
+    if (type === "setAutoAssignCurrent") {
+        const id = String(msg.modelId || "").trim();
+        if (!id) {
+            return;
+        }
+        try {
+            require("./auto_assign").setCurrentAutoAssignTargetId(id, "settings-current");
+        }
+        catch (e) {
+            panel.webview.postMessage({
+                type: "toast",
+                ok: false,
+                error: e?.message || String(e),
+            });
+            return;
+        }
+        panel.webview.postMessage({
+            type: "toast",
+            ok: true,
+            info: "自动分配当前项已切换（聊天立刻生效）",
+        });
+        // Refresh「当前模型」to the same target so the two pages don't disagree
+        await postState(panel.webview, id);
+        return;
+    }
     if (type === "refreshCatalog") {
         const result = await refreshCatalog(String(msg.providerId || ""));
         if (result.ok) {
@@ -304,7 +329,8 @@ async function handleMessage(msg, opts) {
         panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
         if (result.ok) {
             onSaved?.();
-            await postState(panel.webview, opts.proxyKey);
+            const cur = String(msg.payload?.currentId || "").trim();
+            await postState(panel.webview, cur || opts.proxyKey);
         }
         return;
     }
@@ -1298,7 +1324,8 @@ function getHtml() {
   <div class="panel active" id="panel-current">
     <div class="card">
       <h2>当前模型</h2>
-      <div class="sub">编辑哪一个已启用模型的参数（与 Copilot 下拉选择独立；发过聊天后会优先跟上次对话模型）。</div>
+      <div class="sub">这里只编辑「某个已启用模型」的参数，不等于 Copilot 正在用谁。发过聊天后会优先跟上次对话模型。</div>
+      <div class="sub" id="autoAssignHint" style="margin-top:6px"></div>
       <div class="row">
         <label>选择模型</label>
         <select id="currentModelSelect"></select>
@@ -1420,6 +1447,7 @@ function getHtml() {
         <label>当前选用</label>
         <select id="autoCurrent"></select>
       </div>
+      <div class="sub">「当前选用」一改就立刻决定 Copilot「自动分配」打向谁（手动模式）；改池勾选仍需点下方保存。</div>
       <h2 style="margin-top:14px">池内模型</h2>
       <div id="autoPoolList"></div>
       <div class="actions">
@@ -1573,6 +1601,21 @@ function getHtml() {
         }).join('')
       : '<option value="">（池为空 · 勾选后点保存）</option>';
     if (prefer && ids.includes(prefer)) $('autoCurrent').value = prefer;
+  }
+  function updateAutoAssignHint() {
+    const el = $('autoAssignHint');
+    if (!el) return;
+    const aa = state.autoAssign || {};
+    const ids = aa.model_ids || [];
+    if (!ids.length) {
+      el.textContent = '';
+      return;
+    }
+    const cur = aa.current || ids[0];
+    const m = (state.enabledModels || []).find(x => x.id === cur);
+    const label = m ? (m.name || m.modelId) : cur;
+    el.innerHTML = 'Copilot 选「自动分配」时实际走：<strong>' + esc(label) +
+      '</strong> —— 请到「自动分配」页改「当前选用」。下方下拉只是在改参数，不会切换自动分配指向。';
   }
   function renderAutoPool() {
     const aa = state.autoAssign || {};
@@ -1768,6 +1811,7 @@ function getHtml() {
     }
     fillCatalogProviderSelect(msg.lastCatalogProviderId || state.catalogProviderId);
     renderAutoPool();
+    updateAutoAssignHint();
     const pid = ($('catalogProvider') && $('catalogProvider').value) || '';
     const hadLocal = (state.catalog || []).length > 0 && state.catalogProviderId === pid;
     if (hadLocal) {
@@ -1798,6 +1842,12 @@ function getHtml() {
     if (!ev.target || !ev.target.matches || !ev.target.matches('input[data-auto-id]')) return;
     fillAutoCurrentSelect();
     setStatus('池已改动，请点「保存自动分配」后生效');
+  });
+  $('autoCurrent').addEventListener('change', () => {
+    const id = $('autoCurrent').value || '';
+    if (!id) return;
+    setStatus('正在切换自动分配当前项…');
+    vscode.postMessage({ type: 'setAutoAssignCurrent', modelId: id });
   });
   $('btnSaveAuto').addEventListener('click', () => {
     const modelIds = checkedAutoModelIds();
