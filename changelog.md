@@ -2,6 +2,26 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.6] — 2026-10-31
+
+### Changed
+
+* **Model discovery list** — each row shows upstream limits (`ctx` / `out` / 视觉 /
+  工具 / 思考); row padding and font size reduced for denser list.
+
+## [2.0.5] — 2026-10-31
+
+### Fixed
+
+* **Model toggle UI stale** — enabling/disabling wrote config but list stayed wrong;
+  optimistic update + re-sync after save.
+
+## [2.0.4] — 2026-10-31
+
+### Added
+
+* **Provider「修改」** — edit name / base_url / api_key without delete+re-add.
+
 ## [2.0.3] — 2026-10-31
 
 ### Fixed
