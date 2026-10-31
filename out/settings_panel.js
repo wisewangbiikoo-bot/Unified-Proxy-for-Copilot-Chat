@@ -1179,12 +1179,26 @@ function getHtml() {
   .list-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 8px 0; border-bottom: 1px solid var(--vscode-widget-border, #333);
+    width: 100%; box-sizing: border-box;
   }
   .list-row.catalog-row {
     padding: 3px 0; gap: 8px; align-items: center;
   }
   .list-row:last-child { border-bottom: none; }
-  .list-main { min-width: 0; flex: 1; }
+  .list-main {
+    flex: 1 1 auto; min-width: 0; overflow: hidden;
+  }
+  .list-main .sub { margin: 0; }
+  /* Avoid mono word-break:break-all collapsing flex text to 1 character wide */
+  #autoPoolList .list-row {
+    display: flex; align-items: center; gap: 12px;
+  }
+  #autoPoolList .pool-name { font-weight: 600; line-height: 1.3; }
+  #autoPoolList .pool-meta {
+    font-size: 0.8em; opacity: 0.7; line-height: 1.3; margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #autoPoolList input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
   .cat-line1 {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px;
     line-height: 1.25;
@@ -1525,8 +1539,11 @@ function getHtml() {
     $('autoPoolList').innerHTML = models.length
       ? models.map(m =>
           '<label class="list-row" style="cursor:pointer">' +
-            '<div class="list-main"><div>' + esc(m.name) + '</div>' +
-            '<div class="mono sub">' + esc(m.providerName) + ' · ' + esc(m.modelId) + '</div></div>' +
+            '<div class="list-main">' +
+              '<div class="pool-name">' + esc(m.name) + '</div>' +
+              '<div class="pool-meta" title="' + esc(m.providerName + ' · ' + m.modelId) + '">' +
+                esc(m.providerName) + ' · ' + esc(m.modelId) +
+              '</div></div>' +
             '<input type="checkbox" data-auto-id="' + esc(m.id) + '"' +
             (selected.has(m.id) ? ' checked' : '') + ' /></label>'
         ).join('')
@@ -1535,7 +1552,8 @@ function getHtml() {
     $('autoCurrent').innerHTML = poolModels.length
       ? poolModels.map(m =>
           '<option value="' + esc(m.id) + '"' +
-          (m.id === aa.current ? ' selected' : '') + '>' + esc(m.name) + '</option>'
+          (m.id === aa.current ? ' selected' : '') + '>' +
+          esc(m.name) + ' · ' + esc(m.providerName) + '</option>'
         ).join('')
       : '<option value="">（池为空）</option>';
   }

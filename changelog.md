@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.10] — 2026-10-31
+
+### Fixed
+
+* **Auto-assign pool layout** — model names wrapped one character per line (`word-break:
+  break-all` inside flex); now ellipsis row with stable checkbox alignment.
+
 ## [2.0.9] — 2026-10-31
 
 ### Added
