@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.8] — 2026-10-31
+
+### Added
+
+* **Model discovery cost** — show upstream `$input/$output` (USD per 1M tokens) next to
+  ctx/out in each catalog row.
+
 ## [2.0.7] — 2026-10-31
 
 ### Fixed

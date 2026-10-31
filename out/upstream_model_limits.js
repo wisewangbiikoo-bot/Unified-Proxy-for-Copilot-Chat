@@ -53,6 +53,35 @@ function isImageModality(s) {
     return t === "image" || t.startsWith("image/");
 }
 
+/** OpenCode-style cost.price (USD per 1M tokens); allow 0. */
+function positiveMoney(v) {
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n) || n < 0) {
+        return undefined;
+    }
+    return n;
+}
+
+/**
+ * @returns {{ costInput?: number, costOutput?: number }}
+ */
+function parseModelCost(entry) {
+    const cost = entry?.cost;
+    if (!cost || typeof cost !== "object") {
+        return {};
+    }
+    const text = cost.text && typeof cost.text === "object" ? cost.text : cost;
+    const rawIn = text.input ?? cost.input ?? cost.prompt;
+    const rawOut = text.output ?? cost.output ?? cost.completion;
+    const costInput = positiveMoney(
+        typeof rawIn === "number" ? rawIn : rawIn?.price ?? rawIn?.amount,
+    );
+    const costOutput = positiveMoney(
+        typeof rawOut === "number" ? rawOut : rawOut?.price ?? rawOut?.amount,
+    );
+    return { costInput, costOutput };
+}
+
 /**
  * Pull context/output from a single /v1/models data entry.
  * @returns {{ context?: number, output?: number } | null}
@@ -72,6 +101,8 @@ function parseModelLimits(entry) {
  * @returns {{
  *   context?: number,
  *   output?: number,
+ *   costInput?: number,
+ *   costOutput?: number,
  *   supportsNativeVision?: boolean,
  *   supportsTools?: boolean,
  *   supportsThinking?: boolean,
@@ -106,6 +137,8 @@ function parseModelMeta(entry) {
                 entry.max_output,
         );
     }
+
+    const { costInput, costOutput } = parseModelCost(entry);
 
     /** @type {boolean|undefined} */
     let supportsNativeVision;
@@ -149,6 +182,8 @@ function parseModelMeta(entry) {
     if (
         context === undefined &&
         output === undefined &&
+        costInput === undefined &&
+        costOutput === undefined &&
         supportsNativeVision === undefined &&
         supportsTools === undefined &&
         supportsThinking === undefined
@@ -158,6 +193,8 @@ function parseModelMeta(entry) {
     return {
         context,
         output,
+        costInput,
+        costOutput,
         supportsNativeVision,
         supportsTools,
         supportsThinking,

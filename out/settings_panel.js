@@ -806,6 +806,8 @@ async function refreshCatalog(providerId) {
             hasMeta: Boolean(meta),
             context: meta?.context || null,
             output: meta?.output || null,
+            costInput: meta?.costInput ?? null,
+            costOutput: meta?.costOutput ?? null,
             vision: meta?.supportsNativeVision,
             tools: meta?.supportsTools,
             thinking: meta?.supportsThinking,
@@ -1448,12 +1450,27 @@ function getHtml() {
     if (v >= 1000) return Math.round(v / 1000) + 'K';
     return String(Math.floor(v));
   }
+  function fmtPrice(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v < 0) return '';
+    if (v === 0) return '0';
+    if (v >= 100) return String(Math.round(v));
+    if (v >= 1) return (Math.round(v * 100) / 100).toString();
+    // keep meaningful digits for small $/1M prices
+    const s = v.toFixed(4).replace(/0+$/, '').replace(/\\.$/, '');
+    return s || '0';
+  }
   function formatCatalogLimit(it) {
     const parts = [];
     const ctx = fmtTok(it.context);
     const out = fmtTok(it.output);
     if (ctx) parts.push('ctx ' + ctx);
     if (out) parts.push('out ' + out);
+    const pin = fmtPrice(it.costInput);
+    const pout = fmtPrice(it.costOutput);
+    if (pin || pout) {
+      parts.push('$' + (pin || '—') + '/$' + (pout || '—'));
+    }
     if (it.vision === true) parts.push('视觉');
     else if (it.vision === false) parts.push('无视觉');
     if (it.tools === true) parts.push('工具');
