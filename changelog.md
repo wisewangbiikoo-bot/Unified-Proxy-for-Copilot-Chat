@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.28] — 2026-10-31
+
+### Fixed
+
+* **思考模式默认值** — 配置未写 `thinking_mode` 时解析为「标准」(high)，不再误显示「停用」。
+  显式写「停用」/none 仍生效。
+
 ## [2.0.27] — 2026-10-31
 
 ### Changed

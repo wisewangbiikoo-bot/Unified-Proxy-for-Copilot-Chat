@@ -253,14 +253,18 @@ function parseTemperature(proxy) {
     }
     return Math.min(2, Math.max(0, n));
 }
-/** Returns none | low | high | max (DeepSeek V4 reasoningEffort). Default: none (停用). */
+/**
+ * Returns none | low | high | max (DeepSeek V4 / Copilot reasoningEffort).
+ * Default when omitted: high（标准）— matches Copilot schemaDefault & settings save.
+ * Explicit 停用/none still maps to none.
+ */
 function parseThinkingMode(proxy) {
     const raw = proxy.thinking_mode ??
         proxy.thinkingMode ??
         proxy["思考模式"] ??
         proxy.thinking;
     if (raw === undefined || raw === null || raw === "") {
-        return "none";
+        return "high";
     }
     const trimmed = String(raw).trim();
     const s = trimmed.toLowerCase();
@@ -276,7 +280,7 @@ function parseThinkingMode(proxy) {
     if (THINKING_LIGHT.has(s) || THINKING_LIGHT.has(trimmed)) {
         return "low";
     }
-    return "none";
+    return "high";
 }
 
 /**
