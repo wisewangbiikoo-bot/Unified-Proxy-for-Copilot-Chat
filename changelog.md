@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.24] — 2026-10-31
+
+### Changed
+
+* **Quota on open settings** — if OC Go forward counter &gt; 0, silent refresh once and
+  reset counter (then load settings tip with fresh %).
+
 ## [2.0.23] — 2026-10-31
 
 ### Changed

@@ -4,7 +4,8 @@
  * Refresh policy (silent):
  *   1) reload/activate → fetch once, counter = 0
  *   2) every 5 min → if any OpenCode Go API forwards in the window, fetch once & reset counter
- *   No focus / idle / every-N / statusbar-click refreshes.
+ *   3) open settings → if counter > 0, fetch once & reset counter
+ *   No focus / idle / every-N refreshes.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startUsageMonitor = startUsageMonitor;
@@ -17,6 +18,7 @@ exports.getLastQuotaSnapshot = getLastQuotaSnapshot;
 exports.refreshUsageQuota = refreshUsageQuota;
 exports.syncActiveToAutoAssign = syncActiveToAutoAssign;
 exports.fetchOpenCodeUsageForKey = fetchOpenCodeUsageForKey;
+exports.maybeRefreshOnOpenSettings = maybeRefreshOnOpenSettings;
 
 function getLastQuotaSnapshot() {
     return lastQuotaSnapshot;
@@ -25,6 +27,22 @@ function getLastQuotaSnapshot() {
 /** @param {string} [reason] */
 function refreshUsageQuota(reason) {
     return refreshQuota(reason || "external", { silent: true });
+}
+
+/**
+ * Opening settings: if OC Go forwards happened since last refresh, silent-refresh now.
+ * @returns {Promise<object|null>}
+ */
+function maybeRefreshOnOpenSettings() {
+    if (ocForwardsInWindow <= 0) {
+        logger_1.logger.info("Open settings: OC forward counter=0 — skip quota refresh");
+        return Promise.resolve(lastQuotaSnapshot);
+    }
+    const n = ocForwardsInWindow;
+    logger_1.logger.info(
+        `Open settings: ${n} OpenCode Go forward(s) — silent refresh`,
+    );
+    return refreshQuota(`open-settings(${n})`, { silent: true });
 }
 
 /**

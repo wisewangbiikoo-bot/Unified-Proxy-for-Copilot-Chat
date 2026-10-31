@@ -125,9 +125,19 @@ function openSettingsPanel(context, opts = {}) {
     if (context) {
         extContext = context;
     }
+    // If OC Go forwards happened since last quota refresh → silent refresh now
+    const afterQuota = () => {
+        try {
+            const usage_monitor_1 = require("./usage_monitor");
+            return Promise.resolve(usage_monitor_1.maybeRefreshOnOpenSettings?.()).catch(() => null);
+        }
+        catch {
+            return Promise.resolve(null);
+        }
+    };
     if (panel) {
         panel.reveal(vscode.ViewColumn.Active);
-        void postState(panel.webview, opts.proxyKey);
+        void afterQuota().then(() => postState(panel.webview, opts.proxyKey));
         return panel;
     }
     panel = vscode.window.createWebviewPanel(
@@ -154,6 +164,11 @@ function openSettingsPanel(context, opts = {}) {
                 ok: false,
                 error: e?.message || String(e),
             });
+        }
+    });
+    void afterQuota().then(() => {
+        if (panel) {
+            void postState(panel.webview, opts.proxyKey);
         }
     });
     return panel;
