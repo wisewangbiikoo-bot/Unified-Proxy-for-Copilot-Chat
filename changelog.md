@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.12] — 2026-10-31
+
+### Fixed
+
+* **Auto-assign「当前选用」** — rebuild dropdown when pool checkboxes change; remind to
+  click Save (unchecked-until-saved items no longer missing from the selector silently).
+
 ## [2.0.11] — 2026-10-31
 
 ### Fixed

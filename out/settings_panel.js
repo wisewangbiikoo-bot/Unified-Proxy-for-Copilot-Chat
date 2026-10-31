@@ -1399,7 +1399,7 @@ function getHtml() {
   <div class="panel" id="panel-auto">
     <div class="card">
       <h2>自动分配</h2>
-      <div class="sub">从已启用模型中勾选进入轮换池。Copilot 模型列表会出现「自动分配」；聊天时按下方策略选用池内某一模型（不同供应商 / 不同 API Key 均可混入）。</div>
+      <div class="sub">从已启用模型中勾选进入轮换池，改完后必须点「保存自动分配」才会生效。Copilot 里选模型「自动分配」后，按下方策略使用池内模型（可混不同供应商 / API Key）。</div>
       <div class="row">
         <label>切换方式</label>
         <select id="autoMode">
@@ -1553,6 +1553,27 @@ function getHtml() {
         '</div></div>'
     ).join('');
   }
+  function checkedAutoModelIds() {
+    return [...document.querySelectorAll('#autoPoolList input[data-auto-id]:checked')]
+      .map(el => el.getAttribute('data-auto-id'))
+      .filter(Boolean);
+  }
+  function fillAutoCurrentSelect(preferId) {
+    const aa = state.autoAssign || {};
+    const models = state.enabledModels || [];
+    const byId = new Map(models.map(m => [m.id, m]));
+    const ids = checkedAutoModelIds();
+    const prefer = preferId || $('autoCurrent').value || aa.current || '';
+    $('autoCurrent').innerHTML = ids.length
+      ? ids.map(id => {
+          const m = byId.get(id);
+          const label = m ? (m.name || m.modelId || id) : id;
+          return '<option value="' + esc(id) + '"' +
+            (id === prefer ? ' selected' : '') + '>' + esc(label) + '</option>';
+        }).join('')
+      : '<option value="">（池为空 · 勾选后点保存）</option>';
+    if (prefer && ids.includes(prefer)) $('autoCurrent').value = prefer;
+  }
   function renderAutoPool() {
     const aa = state.autoAssign || {};
     const selected = new Set(aa.model_ids || []);
@@ -1574,13 +1595,7 @@ function getHtml() {
           '</label>'
         ).join('')
       : '<div class="sub">请先在「模型」页启用至少一个模型。</div>';
-    const poolModels = models.filter(m => selected.has(m.id));
-    $('autoCurrent').innerHTML = poolModels.length
-      ? poolModels.map(m =>
-          '<option value="' + esc(m.id) + '"' +
-          (m.id === aa.current ? ' selected' : '') + '>' + esc(m.name || m.modelId) + '</option>'
-        ).join('')
-      : '<option value="">（池为空）</option>';
+    fillAutoCurrentSelect(aa.current);
   }
   function fillCatalogProviderSelect(preferredId) {
     const sel = $('catalogProvider');
