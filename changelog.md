@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.2] — 2026-10-31
+
+### Fixed
+
+* **Status bar hidden on schema v2** — `configHasOpenCodeGo()` only looked at legacy
+  `proxies`; with `providers` it returned false and hid the bar after every refresh.
+
 ## [2.0.1] — 2026-10-31
 
 ### Changed

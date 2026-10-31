@@ -812,7 +812,8 @@ function configHasOpenCodeGo() {
             return false;
         }
         const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
-        return Object.values(cfg.proxies || {}).some((p) =>
+        const config_v2_1 = require("./config_v2");
+        return (0, config_v2_1.listProviderEntries)(cfg).some(([, p]) =>
             (0, opencode_headers_1.isOpenCodeGoEndpoint)(p?.base_url),
         );
     }
