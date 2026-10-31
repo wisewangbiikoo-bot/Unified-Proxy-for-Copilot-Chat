@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.15] — 2026-10-31
+
+### Fixed
+
+* **「当前模型」默认跟自动分配** — when the pool is set, settings show the auto-assign
+  「当前选用」(e.g. flash-gmail) instead of the previous chat’s flash-163.
+
 ## [2.0.14] — 2026-10-31
 
 ### Fixed

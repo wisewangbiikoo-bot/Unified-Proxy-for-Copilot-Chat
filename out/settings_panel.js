@@ -20,6 +20,11 @@ let panel = null;
 let onSaved = null;
 /** @type {vscode.ExtensionContext|null} */
 let extContext = null;
+/**
+ * Only set when user picks「当前模型」dropdown — otherwise follow 自动分配「当前选用」.
+ * @type {string|null}
+ */
+let settingsModelOverride = null;
 
 const THINKING_TO_CONFIG = {
     none: "停用",
@@ -166,6 +171,7 @@ async function handleMessage(msg, opts) {
     if (type === "selectCurrentModel") {
         const id = String(msg.proxyKey || "").trim();
         if (id) {
+            settingsModelOverride = id;
             opts.proxyKey = id;
             await postState(panel.webview, id);
         }
@@ -274,12 +280,13 @@ async function handleMessage(msg, opts) {
             });
             return;
         }
+        settingsModelOverride = null; // follow auto-assign again
+        opts.proxyKey = id;
         panel.webview.postMessage({
             type: "toast",
             ok: true,
             info: "自动分配当前项已切换（聊天立刻生效）",
         });
-        // Refresh「当前模型」to the same target so the two pages don't disagree
         await postState(panel.webview, id);
         return;
     }
@@ -330,6 +337,10 @@ async function handleMessage(msg, opts) {
         if (result.ok) {
             onSaved?.();
             const cur = String(msg.payload?.currentId || "").trim();
+            settingsModelOverride = null;
+            if (cur) {
+                opts.proxyKey = cur;
+            }
             await postState(panel.webview, cur || opts.proxyKey);
         }
         return;
@@ -338,11 +349,31 @@ async function handleMessage(msg, opts) {
 
 /**
  * Resolve which model entry the settings「当前模型」edits.
- * Prefer last chat model; never fall back to virtual「自动分配」id.
- * If auto-assign was last used, resolve to its current target for editing params.
+ * Prefer 自动分配「当前选用」when the pool is configured — matches Copilot「自动分配」.
+ * Explicit「当前模型」dropdown override wins until auto-assign current changes.
  */
 function resolveCurrentProxyKey(hint) {
     const auto_assign_1 = require("./auto_assign");
+    const { ok, cfg } = proxy_config_loader_1.readConfigFile();
+
+    if (settingsModelOverride) {
+        const ov = proxy_config_loader_1.parseModelRef(settingsModelOverride).proxyKey;
+        if (ov && !auto_assign_1.isAutoAssignModelId(ov)) {
+            return ov;
+        }
+        if (ov && auto_assign_1.isAutoAssignModelId(ov) && ok && cfg) {
+            return auto_assign_1.getCurrentAutoAssignTargetId(cfg) || "";
+        }
+    }
+
+    // Default: follow auto-assign current (what Copilot「自动分配」actually hits)
+    if (ok && cfg && config_v2_1.isV2Config(cfg)) {
+        const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+        if (target) {
+            return target;
+        }
+    }
+
     const candidates = [];
     try {
         const usage_monitor_1 = require("./usage_monitor");
@@ -362,7 +393,6 @@ function resolveCurrentProxyKey(hint) {
             continue;
         }
         if (auto_assign_1.isAutoAssignModelId(raw)) {
-            const { ok, cfg } = proxy_config_loader_1.readConfigFile();
             if (ok && cfg) {
                 const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
                 if (target) {
@@ -373,7 +403,6 @@ function resolveCurrentProxyKey(hint) {
         }
         return raw;
     }
-    // Skip virtual auto-assign which is unshifted to models[0]
     const models = proxy_config_loader_1.loadModelsFromConfig().filter(
         (m) => m?.id && !auto_assign_1.isAutoAssignModelId(m.id),
     );
@@ -1324,7 +1353,7 @@ function getHtml() {
   <div class="panel active" id="panel-current">
     <div class="card">
       <h2>当前模型</h2>
-      <div class="sub">这里只编辑「某个已启用模型」的参数，不等于 Copilot 正在用谁。发过聊天后会优先跟上次对话模型。</div>
+      <div class="sub">有自动分配池时，默认显示「自动分配 → 当前选用」对应的模型（与 Copilot 选「自动分配」一致）。也可在下方改选其它模型只改参数。</div>
       <div class="sub" id="autoAssignHint" style="margin-top:6px"></div>
       <div class="row">
         <label>选择模型</label>
@@ -1614,8 +1643,8 @@ function getHtml() {
     const cur = aa.current || ids[0];
     const m = (state.enabledModels || []).find(x => x.id === cur);
     const label = m ? (m.name || m.modelId) : cur;
-    el.innerHTML = 'Copilot 选「自动分配」时实际走：<strong>' + esc(label) +
-      '</strong> —— 请到「自动分配」页改「当前选用」。下方下拉只是在改参数，不会切换自动分配指向。';
+    el.innerHTML = '当前应对齐：<strong>' + esc(label) +
+      '</strong>（自动分配 · 手动当前项）。到「自动分配」改「当前选用」会同步到本页。';
   }
   function renderAutoPool() {
     const aa = state.autoAssign || {};
