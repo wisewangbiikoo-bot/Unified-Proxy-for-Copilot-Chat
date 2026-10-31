@@ -455,16 +455,31 @@ function formatLimitTipReset(raw) {
     return `在 ${hm} 重置 ${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+function escTipHtml(s) {
+    return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function tipMeterHtml(percent) {
+    const p = Math.max(0, Math.min(100, Number(percent) || 0));
+    return (
+        `<div class="tip-meter"><div class="tip-meter-fill" style="width:${p}%"></div></div>`
+    );
+}
+
 /**
+ * HTML tip for settings「当前模型」(limits + OC usage styled like status hover).
  * @param {string} proxyKey
  * @param {object|null} proxy
  * @param {{ providerName?: string }} [opts]
  */
 async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
-    const lines = [];
+    const parts = [];
     if (!proxy?.base_url || !proxy?.model_id) {
-        lines.push("上游 limit：缺少 base_url / api_key / model_id");
-        return lines.join("\n");
+        return `<div class="tip-muted">上游 limit：缺少 base_url / api_key / model_id</div>`;
     }
     try {
         const account_manager_1 = require("./account_manager");
@@ -481,30 +496,36 @@ async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
             headers,
         );
         const meta = catalog.get(String(proxy.model_id));
+        parts.push(`<div class="tip-h">上游 limit（GET /models）</div>`);
         if (meta) {
-            lines.push("上游 limit（GET /models）");
+            const rows = [];
             if (meta.context) {
-                lines.push(`  context: ${formatNum(meta.context)}`);
+                rows.push(`context: ${formatNum(meta.context)}`);
             }
             if (meta.output) {
-                lines.push(`  output: ${formatNum(meta.output)}`);
+                rows.push(`output: ${formatNum(meta.output)}`);
             }
             if (meta.supportsNativeVision !== undefined) {
-                lines.push(`  vision: ${meta.supportsNativeVision ? "native" : "no"}`);
+                rows.push(`vision: ${meta.supportsNativeVision ? "native" : "no"}`);
             }
             if (meta.supportsTools !== undefined) {
-                lines.push(`  tools: ${meta.supportsTools}`);
+                rows.push(`tools: ${meta.supportsTools}`);
             }
             if (meta.supportsThinking !== undefined) {
-                lines.push(`  thinking: ${meta.supportsThinking}`);
+                rows.push(`thinking: ${meta.supportsThinking}`);
             }
+            parts.push(
+                `<div class="tip-mono">${rows.map((r) => escTipHtml(r)).join("<br/>")}</div>`,
+            );
         }
         else {
-            lines.push("上游 limit：目录中无此 model_id");
+            parts.push(`<div class="tip-muted">目录中无此 model_id</div>`);
         }
     }
     catch (e) {
-        lines.push(`上游 limit：查询失败（${e?.message || e}）`);
+        parts.push(
+            `<div class="tip-muted">上游 limit：查询失败（${escTipHtml(e?.message || e)}）</div>`,
+        );
     }
     try {
         const opencode_headers_1 = require("./opencode_headers");
@@ -513,7 +534,6 @@ async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
             const account_manager_1b = require("./account_manager");
             const lookup2 = proxy_config_loader_1.getAccountLookupKey(proxyKey);
             const resolved2 = account_manager_1b.resolveApiKeyForProxy(lookup2, proxy);
-            // Supplier name (OpenCode Go · gmail), never OC acc_/user_ id
             const providerName =
                 String(opts.providerName || "").trim() ||
                 String(proxy.name || "").trim() ||
@@ -523,33 +543,51 @@ async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
                 baseUrl: proxy.base_url,
                 label: providerName,
             });
-            lines.push("OpenCode Go 用量");
-            lines.push(`  账号: ${providerName}`);
+            parts.push(`<div class="tip-usage">`);
+            parts.push(`<div class="tip-h">OpenCode Go</div>`);
+            parts.push(
+                `<div class="tip-acct">账号 <code>${escTipHtml(providerName)}</code></div>`,
+            );
             if (tip.usage) {
                 for (const [key, label] of [
-                    ["monthly", "月"],
-                    ["weekly", "周"],
-                    ["rolling", "5h"],
+                    ["monthly", "月额度"],
+                    ["weekly", "周额度"],
+                    ["rolling", "5 小时"],
                 ]) {
                     const win = tip.usage[key];
                     if (!win) {
                         continue;
                     }
                     const p = Number(win.percent);
-                    const pct = Number.isFinite(p) ? `${p}%` : "?%";
-                    const reset = win.resetsAt ? ` · ${formatLimitTipReset(win.resetsAt)}` : "";
-                    lines.push(`  ${label}: ${pct} 已使用${reset}`);
+                    const used = Number.isFinite(p) ? String(p) : "?";
+                    const reset = win.resetsAt ? formatLimitTipReset(win.resetsAt) : "";
+                    parts.push(`<div class="tip-meter-block">`);
+                    parts.push(
+                        `<div class="tip-meter-title">${escTipHtml(label)} &nbsp; ${escTipHtml(used)}% 已使用</div>`,
+                    );
+                    if (Number.isFinite(p)) {
+                        parts.push(tipMeterHtml(p));
+                    }
+                    if (reset) {
+                        parts.push(
+                            `<div class="tip-reset">${escTipHtml(reset)}</div>`,
+                        );
+                    }
+                    parts.push(`</div>`);
                 }
             }
             else if (tip.error) {
-                lines.push(`  拉取失败：${tip.error}`);
+                parts.push(
+                    `<div class="tip-muted">用量拉取失败：${escTipHtml(tip.error)}</div>`,
+                );
             }
+            parts.push(`</div>`);
         }
     }
     catch {
         /* optional */
     }
-    return lines.join("\n");
+    return parts.join("");
 }
 
 async function postState(webview, proxyKeyHint) {
@@ -1405,6 +1443,38 @@ function getHtml() {
     border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
   }
   .aux-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  #modelLimitTip { margin-top: 10px; }
+  .tip-h { font-weight: 600; margin: 10px 0 6px; }
+  .tip-h:first-child { margin-top: 0; }
+  .tip-mono {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.88em; opacity: 0.9; line-height: 1.45;
+  }
+  .tip-muted { opacity: 0.7; font-size: 0.9em; }
+  .tip-usage { margin-top: 12px; }
+  .tip-acct { margin-bottom: 10px; }
+  .tip-acct code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.92em;
+  }
+  .tip-meter-block { margin-bottom: 12px; }
+  .tip-meter-title { font-weight: 600; margin-bottom: 4px; }
+  .tip-meter {
+    height: 8px; border-radius: 4px; overflow: hidden;
+    background: var(--vscode-disabledForeground, #666);
+    opacity: 0.35;
+    position: relative;
+  }
+  .tip-meter-fill {
+    height: 100%; border-radius: 4px;
+    background: var(--vscode-foreground);
+    opacity: 1;
+  }
+  .tip-meter { background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent); opacity: 1; }
+  .tip-reset {
+    margin-top: 4px; font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+  }
 </style>
 </head>
 <body>
@@ -1416,7 +1486,7 @@ function getHtml() {
     （会自动备份原文件）
   </div>
   <div class="tabs">
-    <button class="tab active" data-tab="current">当前模型</button>
+    <button class="tab active" data-tab="current" id="tabCurrent" title="">当前模型</button>
     <button class="tab" data-tab="providers" id="tabProviders">供应商</button>
     <button class="tab" data-tab="models" id="tabModels">模型</button>
     <button class="tab" data-tab="auto" id="tabAuto">自动分配</button>
@@ -1427,15 +1497,11 @@ function getHtml() {
   <div class="panel active" id="panel-current">
     <div class="card">
       <h2>当前模型</h2>
-      <div class="sub">有自动分配池时，默认显示「自动分配 → 当前选用」对应的模型（与 Copilot 选「自动分配」一致）。也可在下方改选其它模型只改参数。</div>
-      <div class="sub" id="autoAssignHint" style="margin-top:6px"></div>
       <div class="row">
         <label>选择模型</label>
         <select id="currentModelSelect"></select>
       </div>
-      <div class="model-title" id="modelName">—</div>
-      <div class="mono sub" id="modelMeta"></div>
-      <pre class="sub" id="modelLimitTip" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      <div id="modelLimitTip"></div>
       <input type="hidden" id="proxyKey" />
       <input type="hidden" id="providerId" />
     </div>
@@ -1720,19 +1786,20 @@ function getHtml() {
     if (prefer && ids.includes(prefer)) $('autoCurrent').value = prefer;
   }
   function updateAutoAssignHint() {
-    const el = $('autoAssignHint');
-    if (!el) return;
+    const tab = $('tabCurrent');
+    if (!tab) return;
     const aa = state.autoAssign || {};
     const ids = aa.model_ids || [];
+    const base =
+      '有自动分配池时，默认显示「自动分配 → 当前选用」对应的模型（与 Copilot 选「自动分配」一致）。也可在下方改选其它模型只改参数。';
     if (!ids.length) {
-      el.textContent = '';
+      tab.title = base;
       return;
     }
     const cur = aa.current || ids[0];
     const m = (state.enabledModels || []).find(x => x.id === cur);
     const label = m ? (m.name || m.modelId) : cur;
-    el.innerHTML = '当前应对齐：<strong>' + esc(label) +
-      '</strong>（自动分配 · 手动当前项）。到「自动分配」改「当前选用」会同步到本页。';
+    tab.title = base + ' 当前应对齐：' + label + '（自动分配 · 手动当前项）。到「自动分配」改「当前选用」会同步到本页。';
   }
   function renderAutoPool() {
     const aa = state.autoAssign || {};
@@ -1880,9 +1947,7 @@ function getHtml() {
     const form = msg.current || {};
     $('proxyKey').value = form.proxyKey || '';
     $('providerId').value = form.providerId || '';
-    $('modelName').textContent = form.name || '—';
-    $('modelMeta').textContent = (form.baseUrl || '') + (form.modelId ? '  ·  ' + form.modelId : '');
-    $('modelLimitTip').textContent = form.limitTip || '';
+    $('modelLimitTip').innerHTML = form.limitTip || '';
     const sel = $('currentModelSelect');
     if (sel) {
       const list = state.enabledModels || [];

@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.23] — 2026-10-31
+
+### Changed
+
+* **「当前模型」UI** — help text on tab hover; remove name/URL lines; usage block
+  uses progress bars like the status-bar hover dialog.
+
 ## [2.0.22] — 2026-10-31
 
 ### Fixed
