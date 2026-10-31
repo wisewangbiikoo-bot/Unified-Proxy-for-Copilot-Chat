@@ -511,26 +511,35 @@ async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
             headers,
         );
         const meta = catalog.get(String(proxy.model_id));
-        parts.push(`<div class="tip-h">上游 limit（GET /models）</div>`);
+        parts.push(`<div class="tip-h">上游限制（GET /models）</div>`);
         if (meta) {
+            const yn = (v) => (v ? "是" : "否");
             const rows = [];
             if (meta.context) {
-                rows.push(`context: ${formatNum(meta.context)}`);
+                rows.push(["上下文", formatNum(meta.context)]);
             }
             if (meta.output) {
-                rows.push(`output: ${formatNum(meta.output)}`);
+                rows.push(["输出", formatNum(meta.output)]);
             }
             if (meta.supportsNativeVision !== undefined) {
-                rows.push(`vision: ${meta.supportsNativeVision ? "native" : "no"}`);
+                rows.push([
+                    "视觉",
+                    meta.supportsNativeVision ? "原生" : "否",
+                ]);
             }
             if (meta.supportsTools !== undefined) {
-                rows.push(`tools: ${meta.supportsTools}`);
+                rows.push(["工具", yn(meta.supportsTools)]);
             }
             if (meta.supportsThinking !== undefined) {
-                rows.push(`thinking: ${meta.supportsThinking}`);
+                rows.push(["思考", yn(meta.supportsThinking)]);
             }
             parts.push(
-                `<div class="tip-mono">${rows.map((r) => escTipHtml(r)).join("<br/>")}</div>`,
+                `<div class="tip-limit">${rows
+                    .map(
+                        ([k, v]) =>
+                            `<div class="tip-limit-row"><span class="tip-limit-k">${escTipHtml(k)}</span><span class="tip-limit-v">${escTipHtml(String(v))}</span></div>`,
+                    )
+                    .join("")}</div>`,
             );
         }
         else {

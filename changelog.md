@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.25] — 2026-10-31
+
+### Changed
+
+* **当前模型 tip** — 上游 limit 改中文（上下文/输出/视觉/工具/思考），字号对齐下方文案；
+  额度进度条缩短（约 220px）。
+
 ## [2.0.24] — 2026-10-31
 
 ### Changed
