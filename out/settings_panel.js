@@ -1348,7 +1348,7 @@ function getHtml() {
     -webkit-tap-highlight-color: transparent; user-select: none;
     outline: none; box-shadow: none;
   }
-  .switch.sm { width: 34px; height: 18px; }
+  .switch.sm { width: 26px; height: 14px; }
   .switch.on { background: var(--vscode-testing-iconPassed, #3fb950); }
   .switch:active, .switch:focus, .switch:focus-visible {
     background: var(--vscode-input-background);
@@ -1362,9 +1362,9 @@ function getHtml() {
     border-radius: 50%; background: #fff; transition: left .12s;
     pointer-events: none;
   }
-  .switch.sm::after { width: 14px; height: 14px; top: 2px; left: 2px; }
+  .switch.sm::after { width: 10px; height: 10px; top: 2px; left: 2px; }
   .switch.on::after { left: 20px; }
-  .switch.sm.on::after { left: 18px; }
+  .switch.sm.on::after { left: 14px; }
   .switch.busy { opacity: 0.65; pointer-events: none; }
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .toolbar input { flex: 1; }

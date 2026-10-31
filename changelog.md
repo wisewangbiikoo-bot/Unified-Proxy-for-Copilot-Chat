@@ -2,6 +2,12 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.17] — 2026-10-31
+
+### Changed
+
+* **Model discovery switches** — smaller toggle knobs on catalog rows.
+
 ## [2.0.16] — 2026-10-31
 
 ### Changed
