@@ -1160,11 +1160,15 @@ function getHtml() {
 
   <div class="panel" id="panel-providers">
     <div class="card">
-      <h2>添加供应商</h2>
+      <h2 id="provFormTitle">添加供应商</h2>
+      <input type="hidden" id="provEditId" value="" />
       <div class="row"><label>名称</label><input id="provName" placeholder="OpenCode Go" /></div>
       <div class="row"><label>Base URL</label><input id="provUrl" placeholder="https://opencode.ai/zen/go/v1" /></div>
-      <div class="row"><label>API Key</label><input id="provKey" type="password" placeholder="sk-..." /></div>
-      <div class="actions"><button class="primary" id="btnAddProv">添加</button></div>
+      <div class="row"><label>API Key</label><input id="provKey" type="password" placeholder="新建必填；修改时留空则不改 Key" /></div>
+      <div class="actions">
+        <button class="primary" id="btnAddProv">添加</button>
+        <button class="secondary hidden" id="btnCancelProvEdit">取消修改</button>
+      </div>
     </div>
     <div class="card">
       <h2>已添加</h2>
@@ -1302,6 +1306,28 @@ function getHtml() {
     if (!m) return ref;
     return (m.providerName || m.providerId) + ' · ' + (m.name || m.modelId);
   }
+  function clearProvEdit() {
+    $('provEditId').value = '';
+    $('provFormTitle').textContent = '添加供应商';
+    $('btnAddProv').textContent = '添加';
+    $('btnCancelProvEdit').classList.add('hidden');
+    $('provName').value = '';
+    $('provUrl').value = '';
+    $('provKey').value = '';
+    $('provKey').placeholder = '新建必填；修改时留空则不改 Key';
+  }
+  function beginProvEdit(p) {
+    $('provEditId').value = p.id || '';
+    $('provFormTitle').textContent = '修改供应商';
+    $('btnAddProv').textContent = '保存修改';
+    $('btnCancelProvEdit').classList.remove('hidden');
+    $('provName').value = p.name || '';
+    $('provUrl').value = p.baseUrl || '';
+    $('provKey').value = '';
+    $('provKey').placeholder = '当前 ' + (p.apiKeyMasked || '***') + ' · 留空不改';
+    $('provName').focus();
+    setStatus('正在修改：' + (p.name || p.id));
+  }
   function renderProviders() {
     const box = $('providerList');
     const list = state.providers || [];
@@ -1314,6 +1340,7 @@ function getHtml() {
         '<div class="list-main"><div class="model-title">' + esc(p.name) + '</div>' +
         '<div class="mono sub">' + esc(p.baseUrl) + ' · key ' + esc(p.apiKeyMasked) + '</div></div>' +
         '<div class="aux-actions">' +
+          '<button class="linkish" data-edit-prov="' + esc(p.id) + '">修改</button>' +
           '<button class="linkish" data-del-prov="' + esc(p.id) + '">删除</button>' +
         '</div></div>'
     ).join('');
@@ -1484,13 +1511,36 @@ function getHtml() {
   });
   $('reload').addEventListener('click', () => vscode.postMessage({ type: 'reload' }));
   $('btnUpgrade').addEventListener('click', () => vscode.postMessage({ type: 'upgradeToV2' }));
+  $('btnCancelProvEdit').addEventListener('click', () => {
+    clearProvEdit();
+    setStatus('');
+  });
   $('btnAddProv').addEventListener('click', () => {
-    vscode.postMessage({
-      type: 'addProvider',
-      payload: { name: $('provName').value, baseUrl: $('provUrl').value, apiKey: $('provKey').value }
-    });
+    const editId = ($('provEditId').value || '').trim();
+    const payload = {
+      name: $('provName').value,
+      baseUrl: $('provUrl').value,
+      apiKey: $('provKey').value,
+    };
+    if (editId) {
+      payload.id = editId;
+      vscode.postMessage({ type: 'updateProvider', payload });
+    } else {
+      if (!(payload.apiKey || '').trim()) {
+        setStatus('添加供应商时 API Key 不能为空', 'err');
+        return;
+      }
+      vscode.postMessage({ type: 'addProvider', payload });
+    }
   });
   $('providerList').addEventListener('click', (ev) => {
+    const editBtn = ev.target.closest('[data-edit-prov]');
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-edit-prov');
+      const p = (state.providers || []).find(x => x.id === id);
+      if (p) beginProvEdit(p);
+      return;
+    }
     const btn = ev.target.closest('[data-del-prov]');
     if (!btn) return;
     if (!confirm('删除该供应商及其下模型？')) return;
@@ -1549,6 +1599,9 @@ function getHtml() {
     }
     if (msg.type === 'toast') {
       setStatus(msg.ok ? (msg.info || '完成') : (msg.error || '失败'), msg.ok ? 'ok' : 'err');
+      if (msg.ok && ($('provEditId').value || '').trim()) {
+        clearProvEdit();
+      }
     }
     if (msg.type === 'catalog') {
       if (!msg.ok) {
