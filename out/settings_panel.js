@@ -184,8 +184,19 @@ async function handleMessage(msg, opts) {
     }
     if (type === "toggleModel") {
         const result = await toggleModel(msg.payload || {});
-        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        panel.webview.postMessage({
+            type: "toast",
+            ok: result.ok,
+            error: result.error,
+            info: result.info,
+        });
         if (result.ok) {
+            panel.webview.postMessage({
+                type: "modelToggled",
+                providerId: String(msg.payload?.providerId || ""),
+                modelId: String(msg.payload?.modelId || ""),
+                enabled: Boolean(msg.payload?.enabled),
+            });
             onSaved?.();
             await postState(panel.webview, opts.proxyKey);
         }
@@ -1378,7 +1389,19 @@ function getHtml() {
     ).join('');
     if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
   }
+  function syncCatalogEnabledFlags() {
+    const providerId = ($('catalogProvider') && $('catalogProvider').value) || '';
+    const enabledSet = new Set(
+      (state.enabledModels || [])
+        .filter(m => m.providerId === providerId)
+        .map(m => m.modelId)
+    );
+    for (const it of state.catalog || []) {
+      it.enabled = enabledSet.has(it.id);
+    }
+  }
   function renderCatalog() {
+    syncCatalogEnabledFlags();
     const q = ($('modelSearch').value || '').trim().toLowerCase();
     const items = (state.catalog || []).filter(it =>
       !q || it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q)
@@ -1392,8 +1415,8 @@ function getHtml() {
       '<div class="list-row">' +
         '<div class="list-main"><div>' + esc(it.name) + '</div>' +
         '<div class="mono sub">' + esc(it.id) + '</div></div>' +
-        '<button class="switch' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
-        '" data-name="' + esc(it.name) + '" title="启用"></button></div>'
+        '<button type="button" class="switch' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
+        '" data-name="' + esc(it.name) + '" title="' + (it.enabled ? '点击禁用' : '点击启用') + '"></button></div>'
     ).join('');
   }
   function fillAuxPick() {
@@ -1454,6 +1477,9 @@ function getHtml() {
     renderProviders();
     fillCatalogProviderSelect();
     renderAutoPool();
+    if ((state.catalog || []).length) {
+      renderCatalog();
+    }
     $('auxVisionLabel').textContent = auxLabel(state.aux.vision && state.aux.vision.ref);
     $('auxWebLabel').textContent = auxLabel(state.aux.web_extract && state.aux.web_extract.ref);
     fillAuxPick();
@@ -1554,9 +1580,17 @@ function getHtml() {
   $('catalogList').addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-toggle]');
     if (!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
     const modelId = btn.getAttribute('data-toggle');
     const name = btn.getAttribute('data-name') || modelId;
     const enabled = !btn.classList.contains('on');
+    // Optimistic UI — postState will reconcile
+    btn.classList.toggle('on', enabled);
+    btn.title = enabled ? '点击禁用' : '点击启用';
+    const hit = (state.catalog || []).find(x => x.id === modelId);
+    if (hit) hit.enabled = enabled;
+    setStatus(enabled ? ('正在启用 ' + name + '…') : ('正在禁用 ' + name + '…'));
     vscode.postMessage({
       type: 'toggleModel',
       payload: {
@@ -1611,6 +1645,13 @@ function getHtml() {
       state.catalog = msg.items || [];
       renderCatalog();
       setStatus('已刷新 ' + state.catalog.length + ' 个模型', 'ok');
+    }
+    if (msg.type === 'modelToggled') {
+      const hit = (state.catalog || []).find(x => x.id === msg.modelId);
+      if (hit) {
+        hit.enabled = Boolean(msg.enabled);
+        renderCatalog();
+      }
     }
   });
   vscode.postMessage({ type: 'ready' });
