@@ -18,6 +18,8 @@ const logger_1 = require("./logger");
 let panel = null;
 /** @type {(() => void)|null} */
 let onSaved = null;
+/** @type {vscode.ExtensionContext|null} */
+let extContext = null;
 
 const THINKING_TO_CONFIG = {
     none: "停用",
@@ -26,7 +28,82 @@ const THINKING_TO_CONFIG = {
     max: "深度",
 };
 
+/** globalState: last refreshed /models list per provider (survives panel close). */
+const CATALOG_CACHE_KEY = "unified-proxy.modelCatalogCache";
+
+/**
+ * @returns {{ byProvider: Record<string, { at: number, items: object[] }>, lastProviderId: string }}
+ */
+function loadCatalogCache() {
+    const raw = extContext?.globalState.get(CATALOG_CACHE_KEY);
+    if (!raw || typeof raw !== "object") {
+        return { byProvider: {}, lastProviderId: "" };
+    }
+    const byProvider =
+        raw.byProvider && typeof raw.byProvider === "object" ? raw.byProvider : {};
+    return {
+        byProvider,
+        lastProviderId: String(raw.lastProviderId || ""),
+    };
+}
+
+function saveCatalogCache(cache) {
+    if (!extContext) {
+        return;
+    }
+    void extContext.globalState.update(CATALOG_CACHE_KEY, {
+        byProvider: cache.byProvider || {},
+        lastProviderId: String(cache.lastProviderId || ""),
+    });
+}
+
+function serializeCatalogItems(items) {
+    return (items || []).map((it) => ({
+        id: it.id,
+        name: it.name,
+        entryId: it.entryId || "",
+        hasMeta: Boolean(it.hasMeta),
+        context: it.context ?? null,
+        output: it.output ?? null,
+        costInput: it.costInput ?? null,
+        costOutput: it.costOutput ?? null,
+        vision: it.vision,
+        tools: it.tools,
+        thinking: it.thinking,
+    }));
+}
+
+function rememberCatalog(providerId, items) {
+    const id = String(providerId || "").trim();
+    if (!id) {
+        return;
+    }
+    const cache = loadCatalogCache();
+    cache.byProvider[id] = {
+        at: Date.now(),
+        items: serializeCatalogItems(items),
+    };
+    cache.lastProviderId = id;
+    saveCatalogCache(cache);
+}
+
+function forgetCatalogProvider(providerId) {
+    const id = String(providerId || "").trim();
+    if (!id) {
+        return;
+    }
+    const cache = loadCatalogCache();
+    if (cache.byProvider[id]) {
+        delete cache.byProvider[id];
+        if (cache.lastProviderId === id) {
+            cache.lastProviderId = Object.keys(cache.byProvider)[0] || "";
+        }
+        saveCatalogCache(cache);
+    }
+}
+
 function registerSettingsCommands(context, hooks) {
+    extContext = context;
     onSaved = hooks?.onSaved || null;
     context.subscriptions.push(
         vscode.commands.registerCommand("unified-proxy-copilot.openProxySettings", () =>
@@ -40,6 +117,9 @@ function registerSettingsCommands(context, hooks) {
  * @param {{ proxyKey?: string }} [opts]
  */
 function openSettingsPanel(context, opts = {}) {
+    if (context) {
+        extContext = context;
+    }
     if (panel) {
         panel.reveal(vscode.ViewColumn.Active);
         void postState(panel.webview, opts.proxyKey);
@@ -163,19 +243,33 @@ async function handleMessage(msg, opts) {
         const result = await deleteProvider(String(msg.providerId || ""));
         panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
         if (result.ok) {
+            forgetCatalogProvider(String(msg.providerId || ""));
             onSaved?.();
             await postState(panel.webview, opts.proxyKey);
         }
         return;
     }
+    if (type === "setLastCatalogProvider") {
+        const id = String(msg.providerId || "").trim();
+        if (id) {
+            const cache = loadCatalogCache();
+            cache.lastProviderId = id;
+            saveCatalogCache(cache);
+        }
+        return;
+    }
     if (type === "refreshCatalog") {
         const result = await refreshCatalog(String(msg.providerId || ""));
+        if (result.ok) {
+            rememberCatalog(result.providerId, result.items || []);
+        }
         panel.webview.postMessage({
             type: "catalog",
             ok: result.ok,
             error: result.error,
             providerId: result.providerId,
             items: result.items || [],
+            cachedAt: result.ok ? Date.now() : null,
         });
         if (result.ok) {
             await postState(panel.webview, opts.proxyKey);
@@ -433,6 +527,25 @@ async function postState(webview, proxyKeyHint) {
         }
     }
 
+    const catalogCache = loadCatalogCache();
+    // Drop cache entries for deleted providers
+    if (isV2) {
+        const alive = new Set(providers.map((p) => p.id));
+        let pruned = false;
+        for (const pid of Object.keys(catalogCache.byProvider)) {
+            if (!alive.has(pid)) {
+                delete catalogCache.byProvider[pid];
+                pruned = true;
+            }
+        }
+        if (pruned) {
+            if (!alive.has(catalogCache.lastProviderId)) {
+                catalogCache.lastProviderId = providers[0]?.id || "";
+            }
+            saveCatalogCache(catalogCache);
+        }
+    }
+
     webview.postMessage({
         type: "state",
         configPath: path,
@@ -445,6 +558,8 @@ async function postState(webview, proxyKeyHint) {
         enabledModels,
         aux,
         autoAssign,
+        catalogCache: catalogCache.byProvider,
+        lastCatalogProviderId: catalogCache.lastProviderId,
     });
 }
 
@@ -1314,7 +1429,10 @@ function getHtml() {
 <script>
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  let state = { isV2: false, enabledModels: [], providers: [], aux: {}, autoAssign: {}, catalog: [] };
+  let state = {
+    isV2: false, enabledModels: [], providers: [], aux: {}, autoAssign: {},
+    catalog: [], catalogCache: {}, catalogProviderId: ''
+  };
   const pendingToggles = new Set(); // modelId currently saving — ignore duplicate pointer events
   let auxEditKind = 'vision';
 
@@ -1421,13 +1539,40 @@ function getHtml() {
         ).join('')
       : '<option value="">（池为空）</option>';
   }
-  function fillCatalogProviderSelect() {
+  function fillCatalogProviderSelect(preferredId) {
     const sel = $('catalogProvider');
-    const cur = sel.value;
+    const cur = preferredId || sel.value;
     sel.innerHTML = (state.providers || []).map(p =>
       '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'
     ).join('');
     if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  }
+  function formatCacheTime(at) {
+    const n = Number(at);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    try { return new Date(n).toLocaleString(); } catch (_) { return ''; }
+  }
+  function loadCatalogForProvider(providerId, announce) {
+    const pid = String(providerId || '');
+    state.catalogProviderId = pid;
+    const packed = state.catalogCache && state.catalogCache[pid];
+    if (packed && Array.isArray(packed.items) && packed.items.length) {
+      state.catalog = packed.items.map(x => Object.assign({}, x));
+      syncCatalogEnabledFlags();
+      renderCatalog();
+      if (announce) {
+        const when = formatCacheTime(packed.at);
+        setStatus(
+          '已加载上次列表' + (when ? ' · ' + when : '') +
+          ' · ' + state.catalog.length + ' 个（点刷新可更新）',
+          'ok'
+        );
+      }
+      return true;
+    }
+    state.catalog = [];
+    renderCatalog();
+    return false;
   }
   function syncCatalogEnabledFlags() {
     const providerId = ($('catalogProvider') && $('catalogProvider').value) || '';
@@ -1560,10 +1705,18 @@ function getHtml() {
     $('temperature').value = form.temperature === '' || form.temperature == null ? '0' : form.temperature;
 
     renderProviders();
-    fillCatalogProviderSelect();
+    if (msg.catalogCache && typeof msg.catalogCache === 'object') {
+      state.catalogCache = msg.catalogCache;
+    }
+    fillCatalogProviderSelect(msg.lastCatalogProviderId || state.catalogProviderId);
     renderAutoPool();
-    if ((state.catalog || []).length) {
+    const pid = ($('catalogProvider') && $('catalogProvider').value) || '';
+    const hadLocal = (state.catalog || []).length > 0 && state.catalogProviderId === pid;
+    if (hadLocal) {
+      syncCatalogEnabledFlags();
       renderCatalog();
+    } else {
+      loadCatalogForProvider(pid, true);
     }
     $('auxVisionLabel').textContent = auxLabel(state.aux.vision && state.aux.vision.ref);
     $('auxWebLabel').textContent = auxLabel(state.aux.web_extract && state.aux.web_extract.ref);
@@ -1656,6 +1809,11 @@ function getHtml() {
     if (!btn) return;
     if (!confirm('删除该供应商及其下模型？')) return;
     vscode.postMessage({ type: 'deleteProvider', providerId: btn.getAttribute('data-del-prov') });
+  });
+  $('catalogProvider').addEventListener('change', () => {
+    const pid = $('catalogProvider').value;
+    vscode.postMessage({ type: 'setLastCatalogProvider', providerId: pid });
+    loadCatalogForProvider(pid, true);
   });
   $('btnRefreshCatalog').addEventListener('click', () => {
     setStatus('刷新模型目录…');
@@ -1764,9 +1922,14 @@ function getHtml() {
         setStatus(msg.error || '刷新失败', 'err');
         return;
       }
+      const pid = msg.providerId || $('catalogProvider').value;
       state.catalog = msg.items || [];
+      state.catalogProviderId = pid;
+      if (!state.catalogCache) state.catalogCache = {};
+      state.catalogCache[pid] = { at: msg.cachedAt || Date.now(), items: state.catalog.map(x => Object.assign({}, x)) };
+      syncCatalogEnabledFlags();
       renderCatalog();
-      setStatus('已刷新 ' + state.catalog.length + ' 个模型', 'ok');
+      setStatus('已刷新 ' + state.catalog.length + ' 个模型（已记住）', 'ok');
     }
   });
   vscode.postMessage({ type: 'ready' });

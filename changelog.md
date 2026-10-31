@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.9] — 2026-10-31
+
+### Added
+
+* **Remember model catalog** — last Refresh result per provider is kept in globalState;
+  reopening settings restores the list (enabled flags re-synced); Refresh still updates.
+
 ## [2.0.8] — 2026-10-31
 
 ### Added
