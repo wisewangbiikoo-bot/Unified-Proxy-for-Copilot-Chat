@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.3] — 2026-10-31
+
+### Fixed
+
+* **Settings「当前模型」错成自动分配** — fallback used `models[0]` which is the virtual
+  auto-assign entry; now prefers last chat model, resolves auto-assign → target, and
+  adds a model dropdown to pick what you edit.
+
 ## [2.0.2] — 2026-10-31
 
 ### Fixed

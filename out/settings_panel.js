@@ -83,6 +83,14 @@ async function handleMessage(msg, opts) {
         await postState(panel.webview, opts.proxyKey);
         return;
     }
+    if (type === "selectCurrentModel") {
+        const id = String(msg.proxyKey || "").trim();
+        if (id) {
+            opts.proxyKey = id;
+            await postState(panel.webview, id);
+        }
+        return;
+    }
     if (type === "upgradeToV2") {
         const r = proxy_config_loader_1.upgradeConfigToV2();
         panel.webview.postMessage({
@@ -203,24 +211,47 @@ async function handleMessage(msg, opts) {
     }
 }
 
+/**
+ * Resolve which model entry the settings「当前模型」edits.
+ * Prefer last chat model; never fall back to virtual「自动分配」id.
+ * If auto-assign was last used, resolve to its current target for editing params.
+ */
 function resolveCurrentProxyKey(hint) {
-    if (hint) {
-        const { proxyKey } = proxy_config_loader_1.parseModelRef(hint);
-        if (proxyKey) {
-            return proxyKey;
-        }
-    }
+    const auto_assign_1 = require("./auto_assign");
+    const candidates = [];
     try {
         const usage_monitor_1 = require("./usage_monitor");
         const last = usage_monitor_1.getLastActiveChat?.();
         if (last?.proxyKey) {
-            return proxy_config_loader_1.parseModelRef(last.proxyKey).proxyKey;
+            candidates.push(proxy_config_loader_1.parseModelRef(last.proxyKey).proxyKey);
         }
     }
     catch {
         /* optional */
     }
-    const models = proxy_config_loader_1.loadModelsFromConfig();
+    if (hint) {
+        candidates.push(proxy_config_loader_1.parseModelRef(hint).proxyKey);
+    }
+    for (const raw of candidates) {
+        if (!raw) {
+            continue;
+        }
+        if (auto_assign_1.isAutoAssignModelId(raw)) {
+            const { ok, cfg } = proxy_config_loader_1.readConfigFile();
+            if (ok && cfg) {
+                const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+                if (target) {
+                    return target;
+                }
+            }
+            continue;
+        }
+        return raw;
+    }
+    // Skip virtual auto-assign which is unshifted to models[0]
+    const models = proxy_config_loader_1.loadModelsFromConfig().filter(
+        (m) => m?.id && !auto_assign_1.isAutoAssignModelId(m.id),
+    );
     return models[0]?.id || "";
 }
 
@@ -414,12 +445,23 @@ async function postState(webview, proxyKeyHint) {
 
 async function buildCurrentForm(cfg, modelEntryId) {
     const isV2 = config_v2_1.isV2Config(cfg);
+    const auto_assign_1 = require("./auto_assign");
     let proxy = null;
     let proxyKey = modelEntryId;
     let lookupKey = modelEntryId;
+    let viaAutoAssign = false;
+
+    // Virtual auto-assign → edit the currently routed real model
+    if (isV2 && auto_assign_1.isAutoAssignModelId(modelEntryId)) {
+        const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+        if (target) {
+            proxyKey = target;
+            viaAutoAssign = true;
+        }
+    }
 
     if (isV2) {
-        const model = config_v2_1.findModel(cfg, modelEntryId);
+        const model = config_v2_1.findModel(cfg, proxyKey);
         const provider = model ? config_v2_1.findProvider(cfg, model.provider_id) : null;
         if (model && provider) {
             proxy = config_v2_1.modelToProxyShape(model, provider);
@@ -427,8 +469,8 @@ async function buildCurrentForm(cfg, modelEntryId) {
         }
     }
     else {
-        proxy = cfg.proxies?.[modelEntryId] || null;
-        lookupKey = modelEntryId;
+        proxy = cfg.proxies?.[proxyKey] || null;
+        lookupKey = proxyKey;
     }
 
     const parsed = account_manager_1.parseAccountsFromProxy(proxy || {}, lookupKey);
@@ -438,14 +480,20 @@ async function buildCurrentForm(cfg, modelEntryId) {
     const tempRaw = proxy?.temperature;
     const maxOut = proxy?.max_output_tokens ?? "";
     const limitTip = await buildModelLimitTip(proxyKey, proxy);
+    const displayName = proxy?.name
+        ? viaAutoAssign
+            ? `自动分配 → ${proxy.name}`
+            : proxy.name
+        : proxyKey || "(未选中模型)";
 
     return {
         proxyKey,
         providerId: lookupKey,
-        name: proxy?.name || proxyKey || "(未选中模型)",
+        name: displayName,
         baseUrl: proxy?.base_url || "",
         modelId: proxy?.model_id || "",
         hasProxy: Boolean(proxy),
+        viaAutoAssign,
         accountId: active?.id || parsed.accounts[0]?.id || "",
         accounts: parsed.accounts.map((a) => ({
             id: a.id,
@@ -1046,6 +1094,11 @@ function getHtml() {
   <div class="panel active" id="panel-current">
     <div class="card">
       <h2>当前模型</h2>
+      <div class="sub">编辑哪一个已启用模型的参数（与 Copilot 下拉选择独立；发过聊天后会优先跟上次对话模型）。</div>
+      <div class="row">
+        <label>选择模型</label>
+        <select id="currentModelSelect"></select>
+      </div>
       <div class="model-title" id="modelName">—</div>
       <div class="mono sub" id="modelMeta"></div>
       <pre class="sub" id="modelLimitTip" style="white-space:pre-wrap;margin:8px 0 0"></pre>
@@ -1339,6 +1392,18 @@ function getHtml() {
     $('modelName').textContent = form.name || '—';
     $('modelMeta').textContent = (form.baseUrl || '') + (form.modelId ? '  ·  ' + form.modelId : '');
     $('modelLimitTip').textContent = form.limitTip || '';
+    const sel = $('currentModelSelect');
+    if (sel) {
+      const list = state.enabledModels || [];
+      sel.innerHTML = list.length
+        ? list.map(m =>
+            '<option value="' + esc(m.id) + '"' +
+            (m.id === form.proxyKey ? ' selected' : '') + '>' +
+            esc(m.name) + ' (' + esc(m.providerName) + ')</option>'
+          ).join('')
+        : '<option value="">（无已启用模型）</option>';
+      if (form.proxyKey) sel.value = form.proxyKey;
+    }
 
     const accounts = form.accounts || [];
     if (!state.isV2 && accounts.length > 1) {
@@ -1372,6 +1437,11 @@ function getHtml() {
       if (t.disabled) return;
       showTab(t.dataset.tab);
     });
+  });
+  $('currentModelSelect')?.addEventListener('change', () => {
+    const id = $('currentModelSelect').value || '';
+    if (!id) return;
+    vscode.postMessage({ type: 'selectCurrentModel', proxyKey: id });
   });
   $('accountMode').addEventListener('change', syncAccountModeUi);
   $('autoMode').addEventListener('change', syncAutoModeUi);
