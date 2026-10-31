@@ -78,17 +78,41 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     const maxTokens = resolveMaxOutputTokens(proxyConfig);
     const temperature = resolveTemperature(proxyConfig);
     // supports_images:
-    //   0 = drop images
+    //   0 = drop images (unless global aux.vision is set → describe via aux)
     //   1 = legacy vision-proxy: describe image as text, then send text-only
     //   2 = native multimodal: OpenAI image_url to backend (e.g. LM Studio)
-    const imageMode = normalizeImageMode(proxyConfig?.supportsImages);
-    const visionProxy = (0, opencode_headers_1.enrichVisionProxyWithOpenCodeHeaders)(
+    let imageMode = normalizeImageMode(proxyConfig?.supportsImages);
+    let visionProxy = (0, opencode_headers_1.enrichVisionProxyWithOpenCodeHeaders)(
         proxyConfig?.visionProxy,
         proxyConfig.openCodeSession,
     );
+    // v2 global aux.vision: upgrade mode 0→1 when aux endpoint exists
+    const visionBase = visionProxy?.baseUrl || visionProxy?.base_url;
+    const visionModel = visionProxy?.modelId || visionProxy?.model_id;
+    if (imageMode === 0 && visionBase && visionModel) {
+        imageMode = 1;
+    }
+    // Web extract (aux) before vision — operates on VS Code message parts
+    let messagesForVision = messages;
+    try {
+        const web_extract_1 = require("../web_extract");
+        messagesForVision = await web_extract_1.maybeSummarizeWebToolResults(
+            messages,
+            proxyConfig,
+            token,
+        );
+    }
+    catch (e) {
+        try {
+            require("../logger").logger.warn(`web_extract skipped: ${e?.message || e}`);
+        }
+        catch {
+            /* */
+        }
+    }
     const visionResolution = imageMode === 1
-        ? await (0, index_1.resolveImageMessages)(messages, token, getVisionModel, visionProxy)
-        : emptyVisionResolution(messages);
+        ? await (0, index_1.resolveImageMessages)(messagesForVision, token, getVisionModel, visionProxy)
+        : emptyVisionResolution(messagesForVision);
     const resolvedMessages = visionResolution.messages;
     const deepseekMessages = (0, convert_1.convertMessages)(resolvedMessages, isThinkingModel, {
         passNativeImages: imageMode === 2,

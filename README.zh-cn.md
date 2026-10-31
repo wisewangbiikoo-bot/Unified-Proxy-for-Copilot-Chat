@@ -24,21 +24,56 @@
 
 ## 本插件新增 / 强化的功能
 
-1. **多模型条目**：配置里有几个代理，Copilot 模型列表里就出现几个模型。
-2. **`proxy_configs.json` 驱动**：默认路径 `%USERPROFILE%\.vscode\proxy_configs.json`（可通过设置 `unified-proxy-copilot.proxyConfigPath` 覆盖）。
-3. **按模型可选参数**：图片支持（0/1/2 三档）、上下文窗口、最大输出、温度、思考模式默认值。
-4. **上游 `/v1/models` 自动探测**（v1.3.3–1.3.5）：省略或写 **`0`** 的 `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` 会按 OpenCode 风格目录自动填充；**仅内存、不回写配置**；强制关闭用 `false`/`off`。见下方「可选字段」表。
-5. **OpenCode Go 用量**（v1.4.0+ / v1.5.0 强化）：右侧状态栏自定义图标 + **月用量 %**；悬停为月/周/5h 进度条（对齐 Copilot）。百分比优先用 `go/status` 的 `access.meters`（与控制台一致），回退 `/v1/usage`。账号标识为 `subscriberUserId`（**不是**模型名）。窗口聚焦 / 聊天请求 / 点击状态栏会刷新；**悬停只看详情**（Stable 无悬停拉网 API）。命令 **Show Usage** / **Refresh Usage**。
-6. **多账号 / 多 API Key**（v1.5.0）：`accounts` + `account_switch`（`manual` 或按分钟 / 每 N 次请求 `rotate`）。**Switch Account** 或设置面板即时切换；当前 key 仅存 `globalState`。本地 `accounts[].name` 仅别名。
-7. **设置 Webview**（v1.5.0）：命令 **Unified Proxy: 设置** 或点状态栏，紧凑面板改账号/轮换/思考默认档/上下文/最大输出/温度；说明藏在 `!` 悬停里。
-8. **可配置视觉代理**（v1.1.0）：每个后端可独立指定视觉来源——VS Code LM 或 HTTP 端点（OpenAI Chat / Anthropic Messages / OpenAI Responses）。
-9. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
-10. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
-11. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
-12. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
-13. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
-14. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
-15. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+1. **配置 schema v2**（v2.0.0）：`schema_version: 2` + `providers` / `models` / `aux`。设置里添加供应商 → **刷新** `/models` → 开关启用；参数由 limit 自动填。旧版 `{ "proxies": … }` **仍可读**；点「升级为 2.0」会备份后迁移。
+2. **多模型条目**：v2 仅 `enabled` 模型进 Copilot；v1 仍为每个 proxy 一条。
+3. **`proxy_configs.json` 驱动**：默认 `%USERPROFILE%\.vscode\proxy_configs.json`（可用 `unified-proxy-copilot.proxyConfigPath` 覆盖）。
+4. **按模型可选参数**：图片 0/1/2、上下文、最大输出、温度、思考默认档；v2 用户改参写 `param_source: user`，刷新不覆盖。
+5. **上游 `/v1/models` 自动探测**：省略或 **`0`** 自动探测；强制关用 `false`/`off`。
+6. **辅助模型**（v2.0.0）：全局视觉（图片描述）与网页提取（超长页面 tool-result 摘要）；`aux.*.ref: null` = 用主模型。
+7. **OpenCode Go 用量**（v1.4.0+ / v1.5.0）：状态栏月用量 % + 悬停月/周/5h；账号为 `subscriberUserId`。
+8. **多账号 / 多 API Key**（v1.5.0+）：挂在 **供应商**（v2）或 proxy（v1）上。
+9. **设置 Webview**：页签「当前模型 / 供应商 / 模型 / 辅助模型」。
+10. **可配置视觉代理**（v1.1.0 / v2 推荐用 aux.vision）：HTTP 端点或 VS Code LM。
+11. **Streaming usage 去重**（v1.2.0）：累计 per-chunk usage，流结束时仅上报一次，防止 token 数虚高。
+12. **OpenCode Go 会话亲和**（v1.3.0）：对 `opencode.ai` / `/zen/go` 自动注入 `x-opencode-session`（按对话 segment 稳定）、`x-opencode-client`、`User-Agent`，修复 `MissingSessionID`。
+13. **Vision tool-result 对齐 0.8.2**（v1.3.1）：工具返回的截图也可经 vision proxy 描述；`vision_proxy.timeout_ms` 可配。
+14. **取消 128 工具硬上限**（v1.3.2）：对齐上游 0.9.4 #291；deactivate 不再 `selectChatModels`（0.9.1 #271）。
+15. **OpenAI 兼容工具调用**：对 Copilot 工具 schema 做规范化，适配多数自建代理。
+16. **局域网直连**：子进程 SSE 桥接，自动绕过系统 HTTP 代理访问内网 `base_url`。
+17. **思考模式菜单**：与原版一致（停用 / 轻量 / 标准 / 深度），配置文件可设默认档。
+
+### 配置 2.0（`schema_version: 2`）
+
+推荐在设置 UI 中操作；也可手写：
+
+```json
+{
+  "schema_version": 2,
+  "providers": [
+    { "id": "opencode-go", "name": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1", "api_key": "oc_sk_..." }
+  ],
+  "models": [
+    {
+      "id": "opencode-go__deepseek-v4.1-flash",
+      "provider_id": "opencode-go",
+      "model_id": "deepseek-v4.1-flash",
+      "enabled": true,
+      "name": "DeepSeek V4.1 Flash",
+      "params": { "context_window_size": 0, "supports_images": 0 },
+      "param_source": "auto"
+    }
+  ],
+  "aux": {
+    "vision": { "ref": null },
+    "web_extract": { "ref": null }
+  }
+}
+```
+
+- `models[].id` = `providerId__modelId`（Copilot 模型主键）
+- `param_source: user` 时刷新目录不会覆盖已改参数
+- `aux.*.ref` 指向已启用模型 id；`null` = 自动用主模型
+- 旧版仅有 `proxies` 时：设置页可「升级为 2.0」（生成 `.bak-…` 备份）
 
 ### 多账号（`accounts`）
 

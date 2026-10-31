@@ -193,7 +193,24 @@ function loadProxyRaw(proxyKey) {
     }
     try {
         const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
-        return cfg.proxies?.[proxyKey] || null;
+        const config_v2_1 = require("./config_v2");
+        const lookup = (0, proxy_config_loader_1.getAccountLookupKey)(proxyKey, cfg);
+        if ((0, config_v2_1.isV2Config)(cfg)) {
+            const provider = (0, config_v2_1.findProvider)(cfg, lookup);
+            if (!provider) {
+                return null;
+            }
+            return {
+                name: provider.name || provider.id,
+                base_url: provider.base_url,
+                api_key: provider.api_key,
+                accounts: provider.accounts,
+                account_switch: provider.account_switch,
+                custom_headers: provider.custom_headers,
+                opencode_session: provider.opencode_session,
+            };
+        }
+        return cfg.proxies?.[lookup] || cfg.proxies?.[proxyKey] || null;
     }
     catch {
         return null;
@@ -207,7 +224,8 @@ function listAllProxyEntries() {
     }
     try {
         const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
-        return Object.entries(cfg.proxies || {}).filter(([, p]) => p?.base_url);
+        const config_v2_1 = require("./config_v2");
+        return (0, config_v2_1.listProviderEntries)(cfg);
     }
     catch {
         return [];

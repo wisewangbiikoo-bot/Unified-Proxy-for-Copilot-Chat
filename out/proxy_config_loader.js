@@ -6,17 +6,23 @@ exports.getProxyConfig = getProxyConfig;
 exports.enrichModelsWithUpstreamLimits = enrichModelsWithUpstreamLimits;
 exports.clearAutoLimitsOverrides = clearAutoLimitsOverrides;
 exports.parseModelRef = parseModelRef;
+exports.readConfigFile = readConfigFile;
+exports.writeConfigFile = writeConfigFile;
+exports.upgradeConfigToV2 = upgradeConfigToV2;
+exports.getAccountLookupKey = getAccountLookupKey;
+exports.MODEL_ACCOUNT_SEP = void 0;
 const fs = require("fs");
 const path_1 = require("path");
 const os_1 = require("os");
 const vscode_1 = require("vscode");
 const proxy_config_parse_1 = require("./proxy_config_parse");
 const upstream_model_limits_1 = require("./upstream_model_limits");
+const config_v2_1 = require("./config_v2");
 const logger_1 = require("./logger");
 const CONFIG_SECTION = "unified-proxy-copilot";
 /** When max_output_tokens unset, use 0 so Copilot shows input context only (not input+output). */
 const UNLIMITED_OUTPUT_DISPLAY_TOKENS = 0;
-const EMPTY_CONFIG = '{\n  "proxies": {}\n}\n';
+const EMPTY_CONFIG = '{\n  "schema_version": 2,\n  "providers": [],\n  "models": [],\n  "aux": { "vision": { "ref": null }, "web_extract": { "ref": null } }\n}\n';
 /** Multi-account model id: `${proxyKey}:::${accountId}` (shown as separate Copilot models). */
 const MODEL_ACCOUNT_SEP = ":::";
 exports.MODEL_ACCOUNT_SEP = MODEL_ACCOUNT_SEP;
@@ -36,9 +42,9 @@ function parseModelRef(modelId) {
     }
     return { proxyKey: s, accountId: "" };
 }
+
 /**
  * In-memory only — never written back to proxy_configs.json.
- * Cleared on Reload Config / restart; re-fetched from upstream /models each time.
  * @type {Map<string, {
  *   context?: number,
  *   output?: number,
@@ -59,6 +65,7 @@ function getProxyConfigPath() {
     const custom = String(config.get("proxyConfigPath") ?? "").trim();
     return custom || path_1.join(os_1.homedir(), ".vscode", "proxy_configs.json");
 }
+
 function ensureConfigFileExists() {
     const configPath = getProxyConfigPath();
     if (fs.existsSync(configPath)) {
@@ -74,8 +81,86 @@ function ensureConfigFileExists() {
         : EMPTY_CONFIG;
     fs.writeFileSync(configPath, content, "utf-8");
 }
-function applyAutoOverrides(proxyKey, options) {
-    const over = autoLimitsOverrides.get(proxyKey);
+
+/**
+ * @returns {{ ok: boolean, cfg?: object, error?: string, path: string }}
+ */
+function readConfigFile() {
+    const configPath = getProxyConfigPath();
+    try {
+        ensureConfigFileExists();
+        if (!fs.existsSync(configPath)) {
+            return { ok: false, error: "missing", path: configPath };
+        }
+        const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        return { ok: true, cfg, path: configPath };
+    }
+    catch (e) {
+        return { ok: false, error: e?.message || String(e), path: configPath };
+    }
+}
+
+/**
+ * @param {object} cfg
+ */
+function writeConfigFile(cfg) {
+    const configPath = getProxyConfigPath();
+    const dir = path_1.dirname(configPath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
+    return configPath;
+}
+
+/**
+ * Backup then rewrite disk as schema_version 2.
+ * @returns {{ ok: boolean, path?: string, bak?: string, error?: string }}
+ */
+function upgradeConfigToV2() {
+    const { ok, cfg, path: configPath, error } = readConfigFile();
+    if (!ok || !cfg) {
+        return { ok: false, error: error || "read failed" };
+    }
+    if ((0, config_v2_1.isV2Config)(cfg)) {
+        return { ok: true, path: configPath, bak: "" };
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const bak = `${configPath}.bak-${stamp}`;
+    try {
+        fs.copyFileSync(configPath, bak);
+        const v2 = (0, config_v2_1.migrateV1ToV2)(cfg);
+        writeConfigFile(v2);
+        logger_1.logger.info(`Upgraded proxy_configs to schema_version 2; backup=${bak}`);
+        return { ok: true, path: configPath, bak };
+    }
+    catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+    }
+}
+
+/**
+ * Account-manager key: provider id (v2) or proxy key (v1).
+ * @param {string} modelOrProxyKey
+ * @param {object} [cfg]
+ */
+function getAccountLookupKey(modelOrProxyKey, cfg) {
+    const { proxyKey } = parseModelRef(modelOrProxyKey);
+    const doc = cfg || readConfigFile().cfg;
+    if (doc && (0, config_v2_1.isV2Config)(doc)) {
+        const model = (0, config_v2_1.findModel)(doc, proxyKey);
+        if (model?.provider_id) {
+            return model.provider_id;
+        }
+        if ((0, config_v2_1.findProvider)(doc, proxyKey)) {
+            return proxyKey;
+        }
+    }
+    return proxyKey;
+}
+
+function applyAutoOverrides(overrideKey, options) {
+    const over = autoLimitsOverrides.get(overrideKey);
     if (!over) {
         return options;
     }
@@ -97,6 +182,7 @@ function applyAutoOverrides(proxyKey, options) {
     }
     return next;
 }
+
 function buildModelFromProxy(key, proxy, account) {
     const options = applyAutoOverrides(key, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
     const maxOutputForUi = options.maxOutputTokens ?? UNLIMITED_OUTPUT_DISPLAY_TOKENS;
@@ -115,15 +201,14 @@ function buildModelFromProxy(key, proxy, account) {
         maxInputTokens: options.contextWindowTokens,
         maxOutputTokens: maxOutputForUi,
         capabilities: {
-            // Boolean capability (DeepSeek 0.9.4 #291): no stale numeric 128-tool cap.
             toolCalling: Boolean(options.supportsTools),
-            // Copilot UI: allow attaching images for modes 1 and 2
             imageInput: options.supportsImages > 0,
             thinking: Boolean(options.supportsThinking),
         },
         requiresThinkingParam: false,
         _proxyKey: key,
         _accountId: account?.id || "",
+        _providerId: proxy._providerId || key,
         _proxyConfig: {
             baseUrl: proxy.base_url,
             apiKey: account?.api_key || proxy.api_key,
@@ -146,21 +231,23 @@ function buildModelFromProxy(key, proxy, account) {
         },
     };
 }
+
 function loadModelsFromConfig() {
     try {
         ensureConfigFileExists();
-        const configPath = getProxyConfigPath();
-        if (!fs.existsSync(configPath)) {
+        const { ok, cfg } = readConfigFile();
+        if (!ok || !cfg) {
             return [];
         }
-        const proxyConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if ((0, config_v2_1.isV2Config)(cfg)) {
+            return loadModelsV2(cfg);
+        }
         const models = [];
-        if (proxyConfig.proxies) {
-            for (const [key, proxy] of Object.entries(proxyConfig.proxies)) {
+        if (cfg.proxies) {
+            for (const [key, proxy] of Object.entries(cfg.proxies)) {
                 if (!proxy?.base_url) {
                     continue;
                 }
-                // One Copilot model per proxy entry; multi-account switched in「设置」panel.
                 models.push(buildModelFromProxy(key, proxy));
             }
         }
@@ -170,15 +257,35 @@ function loadModelsFromConfig() {
         return [];
     }
 }
+
+function loadModelsV2(cfg) {
+    const models = [];
+    for (const model of cfg.models || []) {
+        if (!model?.enabled) {
+            continue;
+        }
+        const provider = (0, config_v2_1.findProvider)(cfg, model.provider_id);
+        if (!provider?.base_url) {
+            continue;
+        }
+        const proxy = (0, config_v2_1.modelToProxyShape)(model, provider);
+        proxy._providerId = provider.id;
+        models.push(buildModelFromProxy(model.id, proxy));
+    }
+    return models;
+}
+
 function getProxyConfig(modelId) {
     try {
-        const configPath = getProxyConfigPath();
-        if (!fs.existsSync(configPath)) {
+        const { ok, cfg } = readConfigFile();
+        if (!ok || !cfg) {
             return null;
         }
-        const proxyConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
         const { proxyKey, accountId } = parseModelRef(modelId);
-        const proxy = proxyConfig.proxies?.[proxyKey];
+        if ((0, config_v2_1.isV2Config)(cfg)) {
+            return getProxyConfigV2(cfg, proxyKey, accountId);
+        }
+        const proxy = cfg.proxies?.[proxyKey];
         if (!proxy?.base_url) {
             return null;
         }
@@ -194,6 +301,7 @@ function getProxyConfig(modelId) {
             accountId: resolved.account?.id || accountId || "",
             accountName: resolved.account?.name || "",
             proxyKey,
+            providerId: proxyKey,
             modelId: proxy.model_id,
             supportsImages: options.supportsImages,
             supportsImagesFromConfig: options.supportsImagesFromConfig,
@@ -210,11 +318,69 @@ function getProxyConfig(modelId) {
             thinkingMode: options.thinkingMode,
             customHeaders: options.customHeaders,
             openCodeSession: options.openCodeSession,
+            schemaVersion: 1,
         };
     }
     catch {
         return null;
     }
+}
+
+function getProxyConfigV2(cfg, modelEntryId, accountId) {
+    const model = (0, config_v2_1.findModel)(cfg, modelEntryId);
+    if (!model?.enabled) {
+        return null;
+    }
+    const provider = (0, config_v2_1.findProvider)(cfg, model.provider_id);
+    if (!provider?.base_url) {
+        return null;
+    }
+    const proxy = (0, config_v2_1.modelToProxyShape)(model, provider);
+    const account_manager_1 = require("./account_manager");
+    const lookupKey = provider.id;
+    if (accountId) {
+        account_manager_1.setActiveAccountId(lookupKey, accountId, "model-select");
+    }
+    const options = applyAutoOverrides(modelEntryId, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
+    const resolved = account_manager_1.resolveApiKeyForProxy(lookupKey, proxy);
+
+    // Prefer global aux.vision over per-entry vision_proxy (v2 has none on models)
+    let visionProxy = options.visionProxy;
+    const auxVision = (0, config_v2_1.resolveAuxVisionProxy)(cfg, (pid, prov) => {
+        const r = account_manager_1.resolveApiKeyForProxy(pid, prov);
+        return r.apiKey || prov.api_key || "";
+    });
+    if (auxVision) {
+        visionProxy = (0, proxy_config_parse_1.parseVisionProxyConfig)({ vision_proxy: auxVision });
+    }
+
+    return {
+        baseUrl: provider.base_url,
+        apiKey: resolved.apiKey || provider.api_key,
+        accountId: resolved.account?.id || accountId || "",
+        accountName: resolved.account?.name || "",
+        proxyKey: modelEntryId,
+        providerId: provider.id,
+        modelId: model.model_id,
+        supportsImages: options.supportsImages,
+        supportsImagesFromConfig: options.supportsImagesFromConfig,
+        supportsTools: options.supportsTools,
+        supportsToolsFromConfig: options.supportsToolsFromConfig,
+        supportsThinking: options.supportsThinking,
+        supportsThinkingFromConfig: options.supportsThinkingFromConfig,
+        visionProxy,
+        contextWindowTokens: options.contextWindowTokens,
+        contextWindowFromConfig: options.contextWindowFromConfig,
+        maxOutputTokens: options.maxOutputTokens,
+        maxOutputFromConfig: options.maxOutputFromConfig,
+        temperature: options.temperature,
+        thinkingMode: options.thinkingMode,
+        customHeaders: options.customHeaders,
+        openCodeSession: options.openCodeSession,
+        schemaVersion: 2,
+        auxVisionRef: cfg.aux?.vision?.ref || null,
+        auxWebExtractRef: cfg.aux?.web_extract?.ref || null,
+    };
 }
 
 function needsUpstreamEnrichment(pc) {
@@ -229,7 +395,6 @@ function needsUpstreamEnrichment(pc) {
 
 /**
  * For omitted config fields, GET upstream /models and fill from OpenCode-style meta.
- * Mutates `models` in place and updates autoLimitsOverrides.
  * @returns {Promise<boolean>} true if any model was updated
  */
 async function enrichModelsWithUpstreamLimits(models) {
@@ -313,7 +478,6 @@ async function enrichModelsWithUpstreamLimits(models) {
                 }
                 bits.push(`output=${meta.output}`);
             }
-            // Vision: only native (2) or off (0). Mode 1 (describe proxy) stays config-only.
             if (!pc.supportsImagesFromConfig && meta.supportsNativeVision !== undefined) {
                 const mode = meta.supportsNativeVision ? 2 : 0;
                 if (pc.supportsImages !== mode) {

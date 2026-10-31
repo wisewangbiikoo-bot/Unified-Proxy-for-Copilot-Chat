@@ -32,7 +32,9 @@ function collectNoProxyHosts(extraHost) {
     try {
         if (fs.existsSync(configPath)) {
             const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-            for (const proxy of Object.values(cfg.proxies || {})) {
+            const config_v2_1 = require("./config_v2");
+            const entries = (0, config_v2_1.listProviderEntries)(cfg);
+            for (const [, proxy] of entries) {
                 const baseUrl = proxy?.base_url;
                 if (typeof baseUrl === "string") {
                     try {

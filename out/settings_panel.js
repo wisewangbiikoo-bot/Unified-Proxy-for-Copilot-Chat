@@ -1,9 +1,6 @@
 "use strict";
 /**
- * Unified Proxy 「设置」面板
- * — 绑定当前聊天模型（无模型下拉）
- * — 账号：手动 / 按时间轮换 / 按请求次数轮换
- * — 思考模式、上下文、温度
+ * Unified Proxy 设置 Webview — 当前模型 / 供应商 / 模型发现 / 辅助模型
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.openSettingsPanel = openSettingsPanel;
@@ -13,6 +10,8 @@ const vscode = require("vscode");
 const fs = require("fs");
 const proxy_config_loader_1 = require("./proxy_config_loader");
 const account_manager_1 = require("./account_manager");
+const config_v2_1 = require("./config_v2");
+const upstream_model_limits_1 = require("./upstream_model_limits");
 const logger_1 = require("./logger");
 
 /** @type {vscode.WebviewPanel|null} */
@@ -48,7 +47,7 @@ function openSettingsPanel(context, opts = {}) {
     }
     panel = vscode.window.createWebviewPanel(
         "unifiedProxySettings",
-        "设置",
+        "Unified Proxy 设置",
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         {
             enableScripts: true,
@@ -61,50 +60,12 @@ function openSettingsPanel(context, opts = {}) {
     });
     panel.webview.onDidReceiveMessage(async (msg) => {
         try {
-            if (msg?.type === "ready" || msg?.type === "reload") {
-                await postState(panel.webview, opts.proxyKey);
-                return;
-            }
-            if (msg?.type === "switchAccount") {
-                // Instant apply — no「保存」needed for current-account dropdown
-                const proxyKey =
-                    String(msg.proxyKey || "").trim() ||
-                    resolveCurrentProxyKey(opts.proxyKey);
-                const accountId = String(msg.accountId || "").trim();
-                const ok =
-                    Boolean(proxyKey) &&
-                    Boolean(accountId) &&
-                    account_manager_1.setActiveAccountId(
-                        proxyKey,
-                        accountId,
-                        "settings-panel-instant",
-                    );
-                panel.webview.postMessage({
-                    type: "accountSwitched",
-                    ok,
-                    error: ok ? "" : "切换失败：账号无效或配置未找到",
-                });
-                if (ok) {
-                    await postState(panel.webview, proxyKey);
-                }
-                return;
-            }
-            if (msg?.type === "save") {
-                const result = await saveSettings(msg.payload || {});
-                panel.webview.postMessage({ type: "saved", ok: result.ok, error: result.error });
-                if (result.ok) {
-                    onSaved?.();
-                    void vscode.window.showInformationMessage(
-                        `设置已保存：${result.name || result.proxyKey}`,
-                    );
-                    await postState(panel.webview, result.proxyKey);
-                }
-            }
+            await handleMessage(msg, opts);
         }
         catch (e) {
             logger_1.logger.warn("Settings panel message failed", e);
             panel?.webview.postMessage({
-                type: "saved",
+                type: "toast",
                 ok: false,
                 error: e?.message || String(e),
             });
@@ -113,7 +74,126 @@ function openSettingsPanel(context, opts = {}) {
     return panel;
 }
 
-/** Resolve which proxy entry the settings panel edits (= current chat model). */
+async function handleMessage(msg, opts) {
+    if (!panel) {
+        return;
+    }
+    const type = msg?.type;
+    if (type === "ready" || type === "reload") {
+        await postState(panel.webview, opts.proxyKey);
+        return;
+    }
+    if (type === "upgradeToV2") {
+        const r = proxy_config_loader_1.upgradeConfigToV2();
+        panel.webview.postMessage({
+            type: "toast",
+            ok: r.ok,
+            error: r.error || "",
+            info: r.ok ? `已升级为 2.0${r.bak ? `；备份 ${r.bak}` : ""}` : "",
+        });
+        if (r.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "switchAccount") {
+        const proxyKey =
+            String(msg.proxyKey || "").trim() ||
+            resolveCurrentProxyKey(opts.proxyKey);
+        const lookup = proxy_config_loader_1.getAccountLookupKey(proxyKey);
+        const accountId = String(msg.accountId || "").trim();
+        const ok =
+            Boolean(lookup) &&
+            Boolean(accountId) &&
+            account_manager_1.setActiveAccountId(lookup, accountId, "settings-panel-instant");
+        panel.webview.postMessage({
+            type: "accountSwitched",
+            ok,
+            error: ok ? "" : "切换失败：账号无效或配置未找到",
+        });
+        if (ok) {
+            await postState(panel.webview, proxyKey);
+        }
+        return;
+    }
+    if (type === "saveCurrent") {
+        const result = await saveCurrentSettings(msg.payload || {});
+        panel.webview.postMessage({
+            type: "saved",
+            ok: result.ok,
+            error: result.error,
+        });
+        if (result.ok) {
+            onSaved?.();
+            void vscode.window.showInformationMessage(
+                `设置已保存：${result.name || result.proxyKey}`,
+            );
+            await postState(panel.webview, result.proxyKey);
+        }
+        return;
+    }
+    if (type === "addProvider") {
+        const result = await addProvider(msg.payload || {});
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "updateProvider") {
+        const result = await updateProvider(msg.payload || {});
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "deleteProvider") {
+        const result = await deleteProvider(String(msg.providerId || ""));
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "refreshCatalog") {
+        const result = await refreshCatalog(String(msg.providerId || ""));
+        panel.webview.postMessage({
+            type: "catalog",
+            ok: result.ok,
+            error: result.error,
+            providerId: result.providerId,
+            items: result.items || [],
+        });
+        if (result.ok) {
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "toggleModel") {
+        const result = await toggleModel(msg.payload || {});
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+    if (type === "setAux") {
+        const result = await setAux(msg.payload || {});
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
+}
+
 function resolveCurrentProxyKey(hint) {
     if (hint) {
         const { proxyKey } = proxy_config_loader_1.parseModelRef(hint);
@@ -131,32 +211,8 @@ function resolveCurrentProxyKey(hint) {
     catch {
         /* optional */
     }
-    const multi = account_manager_1.listMultiAccountProxies();
-    if (multi.length) {
-        return multi[0].proxyKey;
-    }
-    const models = loadModelList();
-    return models[0]?.key || "";
-}
-
-function loadModelList() {
-    const path = proxy_config_loader_1.getProxyConfigPath();
-    if (!fs.existsSync(path)) {
-        return [];
-    }
-    let cfg;
-    try {
-        cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
-    }
-    catch {
-        return [];
-    }
-    return Object.entries(cfg.proxies || {}).map(([key, proxy]) => ({
-        key,
-        name: String(proxy?.name || key),
-        baseUrl: String(proxy?.base_url || ""),
-        modelId: String(proxy?.model_id || ""),
-    }));
+    const models = proxy_config_loader_1.loadModelsFromConfig();
+    return models[0]?.id || "";
 }
 
 function thinkingValueFromProxy(proxy) {
@@ -193,85 +249,54 @@ function formatLimitTipReset(raw) {
     return `在 ${hm} 重置 ${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-/**
- * Build hover text: upstream /models limit + config + OpenCode Go usage.
- * @param {string} proxyKey
- * @param {object|null} proxy
- */
 async function buildModelLimitTip(proxyKey, proxy) {
     const lines = [];
-    if (!proxy) {
-        return "未选中模型，无 limit 信息";
-    }
-    const modelId = String(proxy.model_id || "").trim();
-    const baseUrl = String(proxy.base_url || "").trim().replace(/\/$/, "");
-    const contextRaw = proxy.context_window_size ?? proxy.contextWindowSize;
-    const maxOut = proxy.max_output_tokens ?? proxy.maxOutputTokens;
-    const resolved = account_manager_1.resolveApiKeyForProxy(proxyKey, proxy);
-
-    lines.push(`模型 ${modelId || "—"}`);
-
-    // Upstream /v1/models limit.*
-    if (baseUrl && resolved.apiKey && modelId) {
-        try {
-            const upstream_model_limits_1 = require("./upstream_model_limits");
-            const headers = upstream_model_limits_1.buildListHeaders(
-                baseUrl,
-                proxy.custom_headers || proxy.customHeaders || null,
-                proxy.opencode_session || proxy.openCodeSession || "",
-            );
-            const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
-                baseUrl,
-                resolved.apiKey,
-                headers,
-            );
-            const meta = catalog.get(modelId);
-            if (meta && (meta.context || meta.output)) {
-                lines.push("上游 limit（GET /models）");
-                if (meta.context) {
-                    lines.push(`  context: ${formatNum(meta.context)}`);
-                }
-                if (meta.output) {
-                    lines.push(`  output: ${formatNum(meta.output)}`);
-                }
-                if (meta.supportsTools !== undefined) {
-                    lines.push(`  tools: ${meta.supportsTools ? "是" : "否"}`);
-                }
-                if (meta.supportsNativeVision !== undefined) {
-                    lines.push(`  vision: ${meta.supportsNativeVision ? "是" : "否"}`);
-                }
-                if (meta.supportsThinking !== undefined) {
-                    lines.push(`  thinking: ${meta.supportsThinking ? "是" : "否"}`);
-                }
-            }
-            else {
-                lines.push("上游 limit：目录中无此 model_id");
-            }
-        }
-        catch (e) {
-            lines.push(`上游 limit：查询失败（${e?.message || e}）`);
-        }
-    }
-    else {
+    if (!proxy?.base_url || !proxy?.model_id) {
         lines.push("上游 limit：缺少 base_url / api_key / model_id");
+        return lines.join("\n");
     }
-
-    lines.push("本地配置");
-    const ctxShow =
-        contextRaw === "" || contextRaw === undefined || contextRaw === null || Number(contextRaw) === 0
-            ? "自动"
-            : formatNum(contextRaw);
-    const outShow =
-        maxOut === "" || maxOut === undefined || maxOut === null || Number(maxOut) === 0
-            ? "自动"
-            : formatNum(maxOut);
-    lines.push(`  上下文: ${ctxShow}`);
-    lines.push(`  最大输出: ${outShow}`);
-
-    // OpenCode Go quota (refresh lightly)
+    try {
+        const account_manager_1 = require("./account_manager");
+        const lookup = proxy_config_loader_1.getAccountLookupKey(proxyKey);
+        const resolved = account_manager_1.resolveApiKeyForProxy(lookup, proxy);
+        const headers = upstream_model_limits_1.buildListHeaders(
+            proxy.base_url,
+            proxy.custom_headers || proxy.customHeaders,
+            proxy.opencode_session || proxy.openCodeSession || "",
+        );
+        const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
+            proxy.base_url,
+            resolved.apiKey || proxy.api_key || "",
+            headers,
+        );
+        const meta = catalog.get(String(proxy.model_id));
+        if (meta) {
+            lines.push("上游 limit（GET /models）");
+            if (meta.context) {
+                lines.push(`  context: ${formatNum(meta.context)}`);
+            }
+            if (meta.output) {
+                lines.push(`  output: ${formatNum(meta.output)}`);
+            }
+            if (meta.supportsNativeVision !== undefined) {
+                lines.push(`  vision: ${meta.supportsNativeVision ? "native" : "no"}`);
+            }
+            if (meta.supportsTools !== undefined) {
+                lines.push(`  tools: ${meta.supportsTools}`);
+            }
+            if (meta.supportsThinking !== undefined) {
+                lines.push(`  thinking: ${meta.supportsThinking}`);
+            }
+        }
+        else {
+            lines.push("上游 limit：目录中无此 model_id");
+        }
+    }
+    catch (e) {
+        lines.push(`上游 limit：查询失败（${e?.message || e}）`);
+    }
     try {
         const usage_monitor_1 = require("./usage_monitor");
-        await usage_monitor_1.refreshUsageQuota("settings-panel");
         const snap = usage_monitor_1.getLastQuotaSnapshot?.();
         const ep = snap?.endpoints?.[0];
         if (ep?.usage) {
@@ -294,96 +319,212 @@ async function buildModelLimitTip(proxyKey, proxy) {
                 const reset = win.resetsAt ? ` · ${formatLimitTipReset(win.resetsAt)}` : "";
                 lines.push(`  ${label}: ${pct} 已使用${reset}`);
             }
-            if (snap.at) {
-                lines.push(`更新于 ${new Date(snap.at).toLocaleString()}`);
-            }
         }
         else if (ep?.error) {
             lines.push(`OpenCode Go 用量：${ep.error}`);
         }
     }
-    catch (e) {
-        lines.push(`OpenCode Go 用量：${e?.message || e}`);
+    catch {
+        /* optional */
     }
-
     return lines.join("\n");
 }
 
 async function postState(webview, proxyKeyHint) {
-    const path = proxy_config_loader_1.getProxyConfigPath();
-    const proxyKey = resolveCurrentProxyKey(proxyKeyHint);
-    let proxy = null;
-    if (fs.existsSync(path)) {
-        try {
-            const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
-            proxy = cfg.proxies?.[proxyKey] || null;
-        }
-        catch {
-            proxy = null;
-        }
+    const { ok, cfg, path, error } = proxy_config_loader_1.readConfigFile();
+    const schemaVersion = ok && cfg ? config_v2_1.getSchemaVersion(cfg) : 1;
+    const isV2 = schemaVersion >= 2;
+    const modelEntryId = resolveCurrentProxyKey(proxyKeyHint);
+
+    let currentForm = null;
+    if (ok && cfg) {
+        currentForm = await buildCurrentForm(cfg, modelEntryId);
     }
-    const parsed = account_manager_1.parseAccountsFromProxy(proxy || {}, proxyKey);
-    const active = account_manager_1.getActiveAccount(proxyKey);
-    const thinking = thinkingValueFromProxy(proxy);
-    const contextRaw = proxy?.context_window_size ?? proxy?.contextWindowSize ?? "";
-    const tempRaw = proxy?.temperature;
-    const maxOut = proxy?.max_output_tokens ?? proxy?.maxOutputTokens ?? "";
-    const limitTip = await buildModelLimitTip(proxyKey, proxy);
+
+    const providers = [];
+    const enabledModels = [];
+    let aux = { vision: { ref: null }, web_extract: { ref: null } };
+    if (ok && cfg && isV2) {
+        for (const p of cfg.providers || []) {
+            const parsed = account_manager_1.parseAccountsFromProxy(p, p.id);
+            providers.push({
+                id: p.id,
+                name: p.name || p.id,
+                baseUrl: p.base_url || "",
+                apiKeyMasked: account_manager_1.maskApiKey(p.api_key || ""),
+                accountCount: parsed.accounts.length,
+            });
+        }
+        for (const m of cfg.models || []) {
+            if (!m.enabled) {
+                continue;
+            }
+            const prov = config_v2_1.findProvider(cfg, m.provider_id);
+            enabledModels.push({
+                id: m.id,
+                name: m.name || m.model_id,
+                providerId: m.provider_id,
+                providerName: prov?.name || m.provider_id,
+                modelId: m.model_id,
+                paramSource: m.param_source || "auto",
+            });
+        }
+        aux = {
+            vision: { ref: cfg.aux?.vision?.ref ?? null },
+            web_extract: { ref: cfg.aux?.web_extract?.ref ?? null },
+        };
+    }
+
     webview.postMessage({
         type: "state",
         configPath: path,
-        proxyKey,
-        form: {
-            name: proxy?.name || proxyKey || "(未选中模型)",
-            baseUrl: proxy?.base_url || "",
-            modelId: proxy?.model_id || "",
-            hasProxy: Boolean(proxy),
-            accountId: active?.id || parsed.accounts[0]?.id || "",
-            accounts: parsed.accounts.map((a) => ({
-                id: a.id,
-                name: a.name,
-                key: account_manager_1.maskApiKey(a.api_key),
-            })),
-            accountMode: parsed.mode,
-            rotateMinutes: parsed.rotateMinutes,
-            rotateEveryNRequests: parsed.rotateEveryNRequests,
-            thinking,
-            contextWindow: contextRaw === "" || contextRaw === undefined ? "" : String(contextRaw),
-            temperature:
-                tempRaw === "" || tempRaw === undefined || tempRaw === null
-                    ? ""
-                    : String(tempRaw),
-            maxOutputTokens: maxOut === "" || maxOut === undefined ? "" : String(maxOut),
-            limitTip,
-        },
+        schemaVersion,
+        isV2,
+        readError: ok ? "" : error || "read failed",
+        canUpgrade: ok && !isV2,
+        current: currentForm,
+        providers,
+        enabledModels,
+        aux,
     });
 }
 
-async function saveSettings(payload) {
+async function buildCurrentForm(cfg, modelEntryId) {
+    const isV2 = config_v2_1.isV2Config(cfg);
+    let proxy = null;
+    let proxyKey = modelEntryId;
+    let lookupKey = modelEntryId;
+
+    if (isV2) {
+        const model = config_v2_1.findModel(cfg, modelEntryId);
+        const provider = model ? config_v2_1.findProvider(cfg, model.provider_id) : null;
+        if (model && provider) {
+            proxy = config_v2_1.modelToProxyShape(model, provider);
+            lookupKey = provider.id;
+        }
+    }
+    else {
+        proxy = cfg.proxies?.[modelEntryId] || null;
+        lookupKey = modelEntryId;
+    }
+
+    const parsed = account_manager_1.parseAccountsFromProxy(proxy || {}, lookupKey);
+    const active = account_manager_1.getActiveAccount(lookupKey);
+    const thinking = thinkingValueFromProxy(proxy);
+    const contextRaw = proxy?.context_window_size ?? "";
+    const tempRaw = proxy?.temperature;
+    const maxOut = proxy?.max_output_tokens ?? "";
+    const limitTip = await buildModelLimitTip(proxyKey, proxy);
+
+    return {
+        proxyKey,
+        providerId: lookupKey,
+        name: proxy?.name || proxyKey || "(未选中模型)",
+        baseUrl: proxy?.base_url || "",
+        modelId: proxy?.model_id || "",
+        hasProxy: Boolean(proxy),
+        accountId: active?.id || parsed.accounts[0]?.id || "",
+        accounts: parsed.accounts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            key: account_manager_1.maskApiKey(a.api_key),
+        })),
+        accountMode: parsed.mode,
+        rotateMinutes: parsed.rotateMinutes,
+        rotateEveryNRequests: parsed.rotateEveryNRequests,
+        thinking,
+        contextWindow: contextRaw === "" || contextRaw === undefined ? "" : String(contextRaw),
+        temperature:
+            tempRaw === "" || tempRaw === undefined || tempRaw === null
+                ? ""
+                : String(tempRaw),
+        maxOutputTokens: maxOut === "" || maxOut === undefined ? "" : String(maxOut),
+        limitTip,
+    };
+}
+
+async function saveCurrentSettings(payload) {
     const proxyKey = String(payload.proxyKey || "").trim();
     if (!proxyKey) {
-        return { ok: false, error: "当前没有可设置的模型（请先在 Copilot 选一个 Unified Proxy 模型并对话一次）" };
+        return { ok: false, error: "当前没有可设置的模型" };
     }
-    const path = proxy_config_loader_1.getProxyConfigPath();
-    if (!fs.existsSync(path)) {
-        return { ok: false, error: `找不到配置文件: ${path}` };
+    const { ok, cfg, error } = proxy_config_loader_1.readConfigFile();
+    if (!ok || !cfg) {
+        return { ok: false, error: error || "读配置失败" };
     }
-    let cfg;
-    try {
-        cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
+
+    if (config_v2_1.isV2Config(cfg)) {
+        return saveCurrentV2(cfg, proxyKey, payload);
     }
-    catch (e) {
-        return { ok: false, error: `配置解析失败: ${e.message}` };
-    }
+    return saveCurrentV1(cfg, proxyKey, payload);
+}
+
+function saveCurrentV1(cfg, proxyKey, payload) {
     const proxy = cfg.proxies?.[proxyKey];
     if (!proxy || typeof proxy !== "object") {
         return { ok: false, error: `配置中无此模型: ${proxyKey}` };
     }
+    applyThinkingAndParamsToProxy(proxy, payload);
+    applyAccountSwitchToProxy(proxy, payload);
+    proxy_config_loader_1.writeConfigFile(cfg);
+    finalizeAccountAfterSave(proxyKey, payload);
+    return { ok: true, proxyKey, name: proxy.name || proxyKey };
+}
 
+function saveCurrentV2(cfg, modelEntryId, payload) {
+    const model = config_v2_1.findModel(cfg, modelEntryId);
+    const provider = model ? config_v2_1.findProvider(cfg, model.provider_id) : null;
+    if (!model || !provider) {
+        return { ok: false, error: `配置中无此模型: ${modelEntryId}` };
+    }
+    const thinking = String(payload.thinking || "high");
+    const edits = {
+        thinking_mode: THINKING_TO_CONFIG[thinking] || "标准",
+    };
+    if (payload.contextWindow !== undefined) {
+        const raw = String(payload.contextWindow).trim();
+        if (raw === "" || raw === "0") {
+            edits.context_window_size = 0;
+        }
+        else {
+            const n = Number(raw.replace(/,/g, ""));
+            edits.context_window_size = Number.isFinite(n) && n > 0 ? Math.floor(n) : raw;
+        }
+    }
+    if (payload.maxOutputTokens !== undefined) {
+        const raw = String(payload.maxOutputTokens).trim();
+        if (raw === "" || raw === "0") {
+            edits.max_output_tokens = 0;
+        }
+        else {
+            const m = Number(raw.replace(/,/g, ""));
+            if (Number.isFinite(m) && m > 0) {
+                edits.max_output_tokens = Math.floor(m);
+            }
+        }
+    }
+    if (payload.temperature !== undefined) {
+        const raw = String(payload.temperature).trim();
+        if (raw === "" || raw === "0") {
+            edits.temperature = null;
+        }
+        else {
+            const t = Number(raw);
+            if (Number.isFinite(t) && t > 0) {
+                edits.temperature = Math.min(2, Math.max(0.01, t));
+            }
+        }
+    }
+    config_v2_1.applyUserParams(model, edits);
+    applyAccountSwitchToProxy(provider, payload);
+    proxy_config_loader_1.writeConfigFile(cfg);
+    finalizeAccountAfterSave(provider.id, payload);
+    return { ok: true, proxyKey: modelEntryId, name: model.name || model.model_id };
+}
+
+function applyThinkingAndParamsToProxy(proxy, payload) {
     const thinking = String(payload.thinking || "high");
     proxy.thinking_mode = THINKING_TO_CONFIG[thinking] || "标准";
-
-    // 0 / empty → auto (omit or write 0 so parse* treats as fromConfig=false)
     if (payload.contextWindow !== undefined) {
         const raw = String(payload.contextWindow).trim();
         if (raw === "" || raw === "0") {
@@ -391,15 +532,9 @@ async function saveSettings(payload) {
         }
         else {
             const n = Number(raw.replace(/,/g, ""));
-            if (Number.isFinite(n) && n > 0) {
-                proxy.context_window_size = Math.floor(n);
-            }
-            else {
-                proxy.context_window_size = raw;
-            }
+            proxy.context_window_size = Number.isFinite(n) && n > 0 ? Math.floor(n) : raw;
         }
     }
-
     if (payload.maxOutputTokens !== undefined) {
         const raw = String(payload.maxOutputTokens).trim();
         if (raw === "" || raw === "0") {
@@ -412,11 +547,9 @@ async function saveSettings(payload) {
             }
         }
     }
-
     if (payload.temperature !== undefined) {
         const raw = String(payload.temperature).trim();
         if (raw === "" || raw === "0") {
-            // 0 = auto → remove forced temperature
             delete proxy.temperature;
             delete proxy.Temperature;
         }
@@ -427,8 +560,9 @@ async function saveSettings(payload) {
             }
         }
     }
+}
 
-    // Account switch mode
+function applyAccountSwitchToProxy(proxy, payload) {
     let accountMode = String(payload.accountMode || "manual").trim().toLowerCase();
     if (accountMode === "rotate_requests" || accountMode === "requests") {
         accountMode = "rotate_requests";
@@ -439,42 +573,281 @@ async function saveSettings(payload) {
     else {
         accountMode = "manual";
     }
-    const rotateMinutes = Math.max(
-        1,
-        Math.min(1440, Math.floor(Number(payload.rotateMinutes) || 5)),
-    );
-    const rotateEveryN = Math.max(
-        1,
-        Math.min(500, Math.floor(Number(payload.rotateEveryNRequests) || 10)),
-    );
     proxy.account_switch = {
         mode: accountMode,
-        rotate_minutes: rotateMinutes,
-        rotate_every_n_requests: rotateEveryN,
+        rotate_minutes: Math.max(1, Math.min(1440, Math.floor(Number(payload.rotateMinutes) || 5))),
+        rotate_every_n_requests: Math.max(
+            1,
+            Math.min(500, Math.floor(Number(payload.rotateEveryNRequests) || 10)),
+        ),
     };
+}
 
-    fs.writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
-
-    if (accountMode === "manual") {
+function finalizeAccountAfterSave(lookupKey, payload) {
+    const accountMode = String(payload.accountMode || "manual").trim().toLowerCase();
+    if (accountMode === "manual" || accountMode === "") {
         const accountId = String(payload.accountId || "").trim();
         if (accountId) {
-            account_manager_1.setActiveAccountId(proxyKey, accountId, "settings-panel");
+            account_manager_1.setActiveAccountId(lookupKey, accountId, "settings-panel");
         }
     }
-
-    account_manager_1.rescheduleAllRotators?.();
-    // ensure export - call via require if needed
     try {
-        require("./account_manager").rescheduleAllRotators();
+        account_manager_1.rescheduleAllRotators();
     }
     catch {
         /* */
     }
+}
 
-    logger_1.logger.info(
-        `Settings saved ${proxyKey}: accountMode=${accountMode} thinking=${proxy.thinking_mode}`,
+async function requireV2() {
+    const { ok, cfg, error } = proxy_config_loader_1.readConfigFile();
+    if (!ok || !cfg) {
+        return { ok: false, error: error || "读配置失败" };
+    }
+    if (!config_v2_1.isV2Config(cfg)) {
+        return { ok: false, error: "请先点击「升级为 2.0」" };
+    }
+    return { ok: true, cfg };
+}
+
+async function addProvider(payload) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    const name = String(payload.name || "").trim() || "Provider";
+    const baseUrl = String(payload.baseUrl || payload.base_url || "").trim();
+    const apiKey = String(payload.apiKey || payload.api_key || "").trim();
+    if (!baseUrl) {
+        return { ok: false, error: "base_url 不能为空" };
+    }
+    const id = config_v2_1.ensureUniqueProviderId(
+        cfg.providers,
+        config_v2_1.slugifyId(payload.id || name),
     );
-    return { ok: true, proxyKey, name: proxy.name || proxyKey };
+    cfg.providers.push({
+        id,
+        name,
+        base_url: baseUrl,
+        api_key: apiKey,
+    });
+    proxy_config_loader_1.writeConfigFile(cfg);
+    return { ok: true, info: `已添加供应商 ${name}` };
+}
+
+async function updateProvider(payload) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    const id = String(payload.id || "").trim();
+    const provider = config_v2_1.findProvider(cfg, id);
+    if (!provider) {
+        return { ok: false, error: "供应商不存在" };
+    }
+    if (payload.name !== undefined) {
+        provider.name = String(payload.name || provider.name);
+    }
+    if (payload.baseUrl !== undefined || payload.base_url !== undefined) {
+        const u = String(payload.baseUrl || payload.base_url || "").trim();
+        if (u) {
+            provider.base_url = u;
+        }
+    }
+    if (payload.apiKey !== undefined || payload.api_key !== undefined) {
+        const k = String(payload.apiKey ?? payload.api_key ?? "");
+        if (k.trim()) {
+            provider.api_key = k.trim();
+        }
+    }
+    proxy_config_loader_1.writeConfigFile(cfg);
+    return { ok: true, info: `已更新供应商 ${provider.name}` };
+}
+
+async function deleteProvider(providerId) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    const id = String(providerId || "").trim();
+    if (!id) {
+        return { ok: false, error: "缺少 providerId" };
+    }
+    cfg.providers = (cfg.providers || []).filter((p) => p.id !== id);
+    cfg.models = (cfg.models || []).filter((m) => m.provider_id !== id);
+    if (cfg.aux?.vision?.ref) {
+        const m = config_v2_1.findModel(cfg, cfg.aux.vision.ref);
+        if (!m || m.provider_id === id) {
+            cfg.aux.vision.ref = null;
+        }
+    }
+    if (cfg.aux?.web_extract?.ref) {
+        const m = config_v2_1.findModel(cfg, cfg.aux.web_extract.ref);
+        if (!m || m.provider_id === id) {
+            cfg.aux.web_extract.ref = null;
+        }
+    }
+    proxy_config_loader_1.writeConfigFile(cfg);
+    return { ok: true, info: `已删除供应商 ${id}` };
+}
+
+async function refreshCatalog(providerId) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return { ...gate, items: [] };
+    }
+    const cfg = gate.cfg;
+    const id = String(providerId || "").trim();
+    const provider = config_v2_1.findProvider(cfg, id);
+    if (!provider?.base_url) {
+        return { ok: false, error: "供应商不存在", items: [], providerId: id };
+    }
+    const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
+    const headers = upstream_model_limits_1.buildListHeaders(
+        provider.base_url,
+        provider.custom_headers,
+        provider.opencode_session || "",
+    );
+    const list = await upstream_model_limits_1.fetchUpstreamModelCatalog(
+        provider.base_url,
+        resolved.apiKey || provider.api_key || "",
+        headers,
+    );
+    const enabledIds = new Set(
+        (cfg.models || [])
+            .filter((m) => m.provider_id === id && m.enabled)
+            .map((m) => m.model_id),
+    );
+    const items = list.map((x) => ({
+        id: x.id,
+        name: x.name,
+        enabled: enabledIds.has(x.id),
+        entryId: config_v2_1.makeModelId(id, x.id),
+        hasMeta: Boolean(x.meta),
+    }));
+    return { ok: true, providerId: id, items };
+}
+
+async function toggleModel(payload) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    const providerId = String(payload.providerId || "").trim();
+    const modelId = String(payload.modelId || "").trim();
+    const enabled = Boolean(payload.enabled);
+    if (!providerId || !modelId) {
+        return { ok: false, error: "缺少 providerId / modelId" };
+    }
+    const provider = config_v2_1.findProvider(cfg, providerId);
+    if (!provider) {
+        return { ok: false, error: "供应商不存在" };
+    }
+    const entryId = config_v2_1.makeModelId(providerId, modelId);
+    let model = config_v2_1.findModel(cfg, entryId);
+    if (!model && enabled) {
+        // Fetch meta for auto params
+        let meta = null;
+        try {
+            const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
+            const headers = upstream_model_limits_1.buildListHeaders(
+                provider.base_url,
+                provider.custom_headers,
+                provider.opencode_session || "",
+            );
+            const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
+                provider.base_url,
+                resolved.apiKey || provider.api_key || "",
+                headers,
+            );
+            meta = catalog.get(modelId) || null;
+        }
+        catch {
+            meta = null;
+        }
+        const displayName = String(payload.name || modelId);
+        model = {
+            id: entryId,
+            provider_id: providerId,
+            model_id: modelId,
+            enabled: true,
+            name: displayName,
+            params: config_v2_1.paramsFromMeta(meta),
+            param_source: "auto",
+        };
+        cfg.models.push(model);
+    }
+    else if (model) {
+        model.enabled = enabled;
+        if (enabled && model.param_source !== "user") {
+            try {
+                const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
+                const headers = upstream_model_limits_1.buildListHeaders(
+                    provider.base_url,
+                    provider.custom_headers,
+                    provider.opencode_session || "",
+                );
+                const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
+                    provider.base_url,
+                    resolved.apiKey || provider.api_key || "",
+                    headers,
+                );
+                const meta = catalog.get(modelId);
+                if (meta) {
+                    model.params = config_v2_1.paramsFromMeta(meta);
+                    model.param_source = "auto";
+                }
+            }
+            catch {
+                /* keep */
+            }
+        }
+    }
+    else {
+        return { ok: true, info: "已关闭（未入库）" };
+    }
+    proxy_config_loader_1.writeConfigFile(cfg);
+    return {
+        ok: true,
+        info: enabled ? `已启用 ${model.name || modelId}` : `已禁用 ${model.name || modelId}`,
+    };
+}
+
+async function setAux(payload) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    if (!cfg.aux) {
+        cfg.aux = { vision: { ref: null }, web_extract: { ref: null } };
+    }
+    const kind = String(payload.kind || "").trim();
+    if (payload.resetAll) {
+        cfg.aux.vision = { ref: null };
+        cfg.aux.web_extract = { ref: null };
+        proxy_config_loader_1.writeConfigFile(cfg);
+        return { ok: true, info: "辅助模型已全部重置为主模型" };
+    }
+    let ref = payload.ref;
+    if (ref === "" || ref === undefined) {
+        ref = null;
+    }
+    if (kind === "vision") {
+        cfg.aux.vision = { ref };
+    }
+    else if (kind === "web_extract") {
+        cfg.aux.web_extract = { ref };
+    }
+    else {
+        return { ok: false, error: "未知辅助类型" };
+    }
+    proxy_config_loader_1.writeConfigFile(cfg);
+    return { ok: true, info: "辅助模型已更新" };
 }
 
 function getHtml() {
@@ -489,278 +862,478 @@ function getHtml() {
     font-size: var(--vscode-font-size);
     color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
-    margin: 0; padding: 14px 18px 24px; line-height: 1.4;
+    margin: 0; padding: 12px 16px 28px; line-height: 1.4;
   }
-  h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 10px; }
-  /* Do NOT set opacity on h2 — it makes nested .tip translucent and text stacks. */
-  h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; color: var(--vscode-foreground); }
-  .sub { color: var(--vscode-descriptionForeground); margin-bottom: 10px; font-size: 0.88em; }
+  h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 8px; }
+  h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; }
+  .sub { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin: 0 0 10px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tab {
+    border: 1px solid var(--vscode-widget-border, #555);
+    background: transparent; color: inherit; border-radius: 6px;
+    padding: 5px 12px; cursor: pointer; font: inherit;
+  }
+  .tab.active {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: transparent;
+  }
+  .panel { display: none; }
+  .panel.active { display: block; }
   .card {
-    border: 1px solid var(--vscode-widget-border, var(--vscode-input-border, #4444));
+    border: 1px solid var(--vscode-widget-border, #444);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;
     background: var(--vscode-sideBar-background, var(--vscode-editor-background));
-    overflow: visible; position: relative;
   }
-  .card:has(.lbl:hover), .card:has(.lbl:focus-within) { z-index: 40; }
   .row {
-    display: grid; grid-template-columns: minmax(120px, 150px) 1fr; gap: 6px 12px;
+    display: grid; grid-template-columns: minmax(110px, 140px) 1fr; gap: 6px 12px;
     align-items: center; margin-bottom: 8px;
   }
-  .lbl {
-    position: relative; display: inline-flex; align-items: center; gap: 6px;
-    cursor: default; user-select: none; width: fit-content; max-width: 100%;
-    z-index: 1;
-  }
-  .lbl:hover, .lbl:focus-within { z-index: 50; }
-  .lbl .name { line-height: 1.2; }
+  .lbl { display: inline-flex; align-items: center; gap: 6px; }
   .help {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+    width: 14px; height: 14px; border-radius: 50%;
     border: 1.5px solid var(--vscode-descriptionForeground);
     color: var(--vscode-descriptionForeground);
-    font-size: 10px; font-weight: 700; line-height: 1;
+    font-size: 10px; font-weight: 700;
   }
-  .tip {
-    display: none; position: absolute; left: calc(100% + 10px); top: 0;
-    z-index: 1000; min-width: 200px; max-width: 340px; padding: 10px 12px;
-    /* Solid opaque fill — hoverWidget vars can be translucent in some themes */
-    background: var(--vscode-editor-background, #1e1e1e);
-    color: var(--vscode-foreground);
-    border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, #555));
-    border-radius: 6px; font-size: 12px; font-weight: 400; line-height: 1.45;
-    white-space: normal;
-    box-shadow: 0 6px 18px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.2);
-    pointer-events: none;
-  }
-  .lbl:hover .tip, .lbl:focus-within .tip { display: block; }
-  .tip.pre { white-space: pre-line; max-width: min(380px, 58vw); min-width: 240px; }
-  select, input {
+  select, input, textarea {
     width: 100%; box-sizing: border-box;
     background: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border, transparent);
     border-radius: 4px; padding: 5px 8px; font: inherit;
   }
-  select:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
-  .mono { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.88em; opacity: 0.85; word-break: break-all; }
-  .actions { display: flex; gap: 10px; margin-top: 10px; }
-  button { font: inherit; border-radius: 4px; border: 1px solid transparent; padding: 6px 14px; cursor: pointer; }
+  select:disabled, input:disabled { opacity: 0.55; }
+  .mono { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.88em; word-break: break-all; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button { font: inherit; border-radius: 4px; border: 1px solid transparent; padding: 6px 12px; cursor: pointer; }
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  button.primary:hover { background: var(--vscode-button-hoverBackground); }
-  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .status { margin-top: 10px; min-height: 1.2em; color: var(--vscode-descriptionForeground); }
+  button.secondary {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+  }
+  button.linkish {
+    background: transparent; color: var(--vscode-textLink-foreground);
+    border: none; padding: 2px 6px;
+  }
+  .status { margin-top: 8px; min-height: 1.2em; color: var(--vscode-descriptionForeground); }
   .status.err { color: var(--vscode-errorForeground); }
   .status.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
   .hidden { display: none !important; }
-  .model-title { font-weight: 600; margin-bottom: 2px; }
+  .model-title { font-weight: 600; }
+  .list-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--vscode-widget-border, #333);
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-main { min-width: 0; flex: 1; }
+  .tag {
+    display: inline-block; font-size: 0.75em; opacity: 0.75;
+    border: 1px solid var(--vscode-widget-border, #555); border-radius: 999px;
+    padding: 0 6px; margin-left: 6px;
+  }
+  .switch {
+    width: 40px; height: 22px; border-radius: 999px; border: none; cursor: pointer;
+    background: var(--vscode-input-background); position: relative; flex-shrink: 0;
+  }
+  .switch.on { background: var(--vscode-testing-iconPassed, #3fb950); }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: left .15s;
+  }
+  .switch.on::after { left: 20px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .toolbar input { flex: 1; }
+  .banner {
+    border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
+    background: color-mix(in srgb, var(--vscode-inputValidation-warningBackground, #664) 40%, transparent);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+  }
+  .aux-actions { display: flex; gap: 8px; flex-shrink: 0; }
 </style>
 </head>
 <body>
-  <h1>
-    <span class="lbl">设置
-      <span class="help" aria-hidden="true">!</span>
-      <span class="tip">针对当前 Copilot 选中的模型；请先在聊天里选好 Unified Proxy 模型再打开本页</span>
-    </span>
-  </h1>
-
-  <div class="card">
-    <h2>
-      <span class="lbl">
-        <span class="name">当前模型</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip pre" id="modelLimitTip">加载 limit 信息…</span>
-      </span>
-    </h2>
-    <div class="model-title" id="modelName">—</div>
-    <div class="mono sub" id="modelMeta" style="margin-bottom:0"></div>
-    <input type="hidden" id="proxyKey" />
-  </div>
-
-  <div class="card" id="accountCard">
-    <h2>账号切换</h2>
-    <div class="row">
-      <label class="lbl" for="accountMode">
-        <span class="name">切换方式</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">开启自动轮换后，下方账号选择会禁用（由插件自动切换 API Key）。切换方式与轮换参数需点「保存」写入配置</span>
-      </label>
-      <select id="accountMode">
-        <option value="manual">手动选择</option>
-        <option value="rotate">自动轮换 · 按时间</option>
-        <option value="rotate_requests">自动轮换 · 按请求次数</option>
-      </select>
-    </div>
-
-    <div class="row" id="accountRow">
-      <label class="lbl" for="account">
-        <span class="name">当前账号</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">切换后立即生效，无需点「保存」；状态栏用量会跟着刷新</span>
-      </label>
-      <select id="account"></select>
-    </div>
-
-    <div class="row hidden" id="rotateMinRow">
-      <label class="lbl" for="rotateMinutes">
-        <span class="name">轮换间隔</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">单位：分钟。例如 5 = 每 5 分钟换下一个账号（需点保存）</span>
-      </label>
-      <input id="rotateMinutes" type="number" min="1" max="1440" step="1" placeholder="5" />
-    </div>
-
-    <div class="row hidden" id="rotateReqRow">
-      <label class="lbl" for="rotateEveryN">
-        <span class="name">每 N 次请求</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">累计 N 次聊天 API 调用后切换到下一个账号（需点保存）</span>
-      </label>
-      <input id="rotateEveryN" type="number" min="1" max="500" step="1" placeholder="10" />
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>模型参数</h2>
-    <div class="row">
-      <label class="lbl" for="thinking">
-        <span class="name">思考模式</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">写入配置默认档；聊天里 Copilot「标准 · Max …」仍可临时覆盖</span>
-      </label>
-      <select id="thinking">
-        <option value="none">停用</option>
-        <option value="low">轻量</option>
-        <option value="high">标准</option>
-        <option value="max">深度</option>
-      </select>
-    </div>
-
-    <div class="row">
-      <label class="lbl" for="context">
-        <span class="name">上下文大小</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">0 = 自动（按上游模型参数）；也可填 1000000 / 1M</span>
-      </label>
-      <input id="context" placeholder="0 = 自动" />
-    </div>
-    <div class="row">
-      <label class="lbl" for="maxOut">
-        <span class="name">最大输出</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">0 = 自动（按上游模型参数）</span>
-      </label>
-      <input id="maxOut" placeholder="0 = 自动" />
-    </div>
-    <div class="row">
-      <label class="lbl" for="temperature">
-        <span class="name">温度</span>
-        <span class="help" aria-hidden="true">!</span>
-        <span class="tip">0 = 自动（用扩展默认温度）；大于 0 时写入配置</span>
-      </label>
-      <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="0 = 自动" />
-    </div>
-
-    <div class="actions">
-      <button class="primary" id="save">保存</button>
-      <button class="secondary" id="reload">重新加载</button>
-    </div>
-    <div class="status" id="status"></div>
-  </div>
-
+  <h1>Unified Proxy 设置</h1>
   <div class="sub mono" id="configPath"></div>
+  <div id="upgradeBanner" class="banner hidden">
+    当前为 v1 配置。可继续编辑「当前模型」；供应商发现与辅助模型需
+    <button class="primary" id="btnUpgrade">升级为 2.0</button>
+    （会自动备份原文件）
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="current">当前模型</button>
+    <button class="tab" data-tab="providers" id="tabProviders">供应商</button>
+    <button class="tab" data-tab="models" id="tabModels">模型</button>
+    <button class="tab" data-tab="aux" id="tabAux">辅助模型</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="panel active" id="panel-current">
+    <div class="card">
+      <h2>当前模型</h2>
+      <div class="model-title" id="modelName">—</div>
+      <div class="mono sub" id="modelMeta"></div>
+      <pre class="sub" id="modelLimitTip" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      <input type="hidden" id="proxyKey" />
+      <input type="hidden" id="providerId" />
+    </div>
+    <div class="card" id="accountCard">
+      <h2>账号切换</h2>
+      <div class="row">
+        <label class="lbl" for="accountMode">切换方式</label>
+        <select id="accountMode">
+          <option value="manual">手动选择</option>
+          <option value="rotate">自动轮换 · 按时间</option>
+          <option value="rotate_requests">自动轮换 · 按请求次数</option>
+        </select>
+      </div>
+      <div class="row" id="accountRow">
+        <label class="lbl" for="account">当前账号</label>
+        <select id="account"></select>
+      </div>
+      <div class="row hidden" id="rotateMinRow">
+        <label class="lbl" for="rotateMinutes">轮换间隔(分)</label>
+        <input id="rotateMinutes" type="number" min="1" max="1440" step="1" />
+      </div>
+      <div class="row hidden" id="rotateReqRow">
+        <label class="lbl" for="rotateEveryN">每 N 次请求</label>
+        <input id="rotateEveryN" type="number" min="1" max="500" step="1" />
+      </div>
+    </div>
+    <div class="card">
+      <h2>模型参数</h2>
+      <div class="row">
+        <label class="lbl" for="thinking">思考模式</label>
+        <select id="thinking">
+          <option value="none">停用</option>
+          <option value="low">轻量</option>
+          <option value="high">标准</option>
+          <option value="max">深度</option>
+        </select>
+      </div>
+      <div class="row">
+        <label class="lbl" for="context">上下文大小</label>
+        <input id="context" placeholder="0 = 自动" />
+      </div>
+      <div class="row">
+        <label class="lbl" for="maxOut">最大输出</label>
+        <input id="maxOut" placeholder="0 = 自动" />
+      </div>
+      <div class="row">
+        <label class="lbl" for="temperature">温度</label>
+        <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="0 = 自动" />
+      </div>
+      <div class="actions">
+        <button class="primary" id="save">保存</button>
+        <button class="secondary" id="reload">重新加载</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-providers">
+    <div class="card">
+      <h2>添加供应商</h2>
+      <div class="row"><label>名称</label><input id="provName" placeholder="OpenCode Go" /></div>
+      <div class="row"><label>Base URL</label><input id="provUrl" placeholder="https://opencode.ai/zen/go/v1" /></div>
+      <div class="row"><label>API Key</label><input id="provKey" type="password" placeholder="sk-..." /></div>
+      <div class="actions"><button class="primary" id="btnAddProv">添加</button></div>
+    </div>
+    <div class="card">
+      <h2>已添加</h2>
+      <div id="providerList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-models">
+    <div class="card">
+      <h2>模型发现</h2>
+      <div class="row">
+        <label>供应商</label>
+        <select id="catalogProvider"></select>
+      </div>
+      <div class="toolbar">
+        <input id="modelSearch" placeholder="搜索模型…" />
+        <button class="secondary" id="btnRefreshCatalog">刷新</button>
+      </div>
+      <div class="sub">打开开关即加入 Copilot 列表；参数由 /models limit 自动填充，可在「当前模型」里改。</div>
+      <div id="catalogList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-aux">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <h2 style="margin:0">辅助模型</h2>
+        <button class="linkish" id="btnResetAux">全部重置为主模型</button>
+      </div>
+      <div class="sub">辅助任务默认使用主模型。你可以为任意任务指定专用模型。</div>
+      <div class="list-row">
+        <div class="list-main">
+          <div>视觉 <span class="tag">图片分析</span></div>
+          <div class="sub" id="auxVisionLabel">自动 · 使用主模型</div>
+        </div>
+        <div class="aux-actions">
+          <button class="linkish" data-aux-clear="vision">设为主模型</button>
+          <button class="linkish" data-aux-change="vision">更改</button>
+        </div>
+      </div>
+      <div class="list-row">
+        <div class="list-main">
+          <div>网页提取 <span class="tag">页面总结</span></div>
+          <div class="sub" id="auxWebLabel">自动 · 使用主模型</div>
+        </div>
+        <div class="aux-actions">
+          <button class="linkish" data-aux-clear="web_extract">设为主模型</button>
+          <button class="linkish" data-aux-change="web_extract">更改</button>
+        </div>
+      </div>
+      <div class="row" id="auxPickRow" style="margin-top:12px">
+        <label>选择模型</label>
+        <select id="auxPick"></select>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnApplyAux">应用所选</button>
+      </div>
+    </div>
+  </div>
 
 <script>
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  const els = {
-    modelName: $('modelName'), modelMeta: $('modelMeta'), modelLimitTip: $('modelLimitTip'), proxyKey: $('proxyKey'),
-    accountCard: $('accountCard'), accountMode: $('accountMode'), account: $('account'), accountRow: $('accountRow'),
-    rotateMinRow: $('rotateMinRow'), rotateMinutes: $('rotateMinutes'),
-    rotateReqRow: $('rotateReqRow'), rotateEveryN: $('rotateEveryN'),
-    thinking: $('thinking'), context: $('context'), temperature: $('temperature'), maxOut: $('maxOut'),
-    save: $('save'), reload: $('reload'), status: $('status'), configPath: $('configPath'),
-  };
+  let state = { isV2: false, enabledModels: [], providers: [], aux: {}, catalog: [] };
+  let auxEditKind = 'vision';
 
   function setStatus(text, kind) {
-    els.status.textContent = text || '';
-    els.status.className = 'status' + (kind ? ' ' + kind : '');
+    const el = $('status');
+    el.textContent = text || '';
+    el.className = 'status' + (kind ? ' ' + kind : '');
   }
   function esc(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
   function syncAccountModeUi() {
-    const mode = els.accountMode.value;
+    const mode = $('accountMode').value;
     const auto = mode === 'rotate' || mode === 'rotate_requests';
-    els.account.disabled = auto;
-    els.rotateMinRow.classList.toggle('hidden', mode !== 'rotate');
-    els.rotateReqRow.classList.toggle('hidden', mode !== 'rotate_requests');
+    $('account').disabled = auto;
+    $('rotateMinRow').classList.toggle('hidden', mode !== 'rotate');
+    $('rotateReqRow').classList.toggle('hidden', mode !== 'rotate_requests');
   }
-
+  function setV2Ui(isV2) {
+    $('upgradeBanner').classList.toggle('hidden', isV2);
+    ['tabProviders','tabModels','tabAux'].forEach(id => {
+      $(id).disabled = !isV2;
+      $(id).style.opacity = isV2 ? '1' : '0.45';
+    });
+  }
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  }
+  function auxLabel(ref) {
+    if (!ref) return '自动 · 使用主模型';
+    const m = (state.enabledModels || []).find(x => x.id === ref);
+    if (!m) return ref;
+    return (m.providerName || m.providerId) + ' · ' + (m.name || m.modelId);
+  }
+  function renderProviders() {
+    const box = $('providerList');
+    const list = state.providers || [];
+    if (!list.length) {
+      box.innerHTML = '<div class="sub">尚无供应商，请先添加。</div>';
+      return;
+    }
+    box.innerHTML = list.map(p =>
+      '<div class="list-row">' +
+        '<div class="list-main"><div class="model-title">' + esc(p.name) + '</div>' +
+        '<div class="mono sub">' + esc(p.baseUrl) + ' · key ' + esc(p.apiKeyMasked) +
+        ' · 账号 ' + esc(p.accountCount) + '</div></div>' +
+        '<div class="aux-actions">' +
+          '<button class="linkish" data-del-prov="' + esc(p.id) + '">删除</button>' +
+        '</div></div>'
+    ).join('');
+  }
+  function fillCatalogProviderSelect() {
+    const sel = $('catalogProvider');
+    const cur = sel.value;
+    sel.innerHTML = (state.providers || []).map(p =>
+      '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'
+    ).join('');
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  }
+  function renderCatalog() {
+    const q = ($('modelSearch').value || '').trim().toLowerCase();
+    const items = (state.catalog || []).filter(it =>
+      !q || it.name.toLowerCase().includes(q) || it.id.toLowerCase().includes(q)
+    );
+    const box = $('catalogList');
+    if (!items.length) {
+      box.innerHTML = '<div class="sub">点「刷新」从上游拉取模型列表。</div>';
+      return;
+    }
+    box.innerHTML = items.map(it =>
+      '<div class="list-row">' +
+        '<div class="list-main"><div>' + esc(it.name) + '</div>' +
+        '<div class="mono sub">' + esc(it.id) + '</div></div>' +
+        '<button class="switch' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
+        '" data-name="' + esc(it.name) + '" title="启用"></button></div>'
+    ).join('');
+  }
+  function fillAuxPick() {
+    const sel = $('auxPick');
+    sel.innerHTML = '<option value="">自动 · 使用主模型</option>' +
+      (state.enabledModels || []).map(m =>
+        '<option value="' + esc(m.id) + '">' + esc(m.providerName + ' · ' + m.name) + '</option>'
+      ).join('');
+  }
   function applyState(msg) {
-    const form = msg.form || {};
-    els.proxyKey.value = msg.proxyKey || '';
-    els.modelName.textContent = form.name || '—';
-    els.modelMeta.textContent = (form.baseUrl || '') + (form.modelId ? '  ·  ' + form.modelId : '');
-    els.modelLimitTip.textContent = form.limitTip || '暂无 limit 信息';
-    els.configPath.textContent = msg.configPath || '';
+    state.isV2 = Boolean(msg.isV2);
+    state.providers = msg.providers || [];
+    state.enabledModels = msg.enabledModels || [];
+    state.aux = msg.aux || {};
+    $('configPath').textContent = 'schema v' + (msg.schemaVersion || 1) + ' · ' + (msg.configPath || '');
+    setV2Ui(state.isV2);
+    if (msg.readError) setStatus('读配置失败：' + msg.readError, 'err');
+
+    const form = msg.current || {};
+    $('proxyKey').value = form.proxyKey || '';
+    $('providerId').value = form.providerId || '';
+    $('modelName').textContent = form.name || '—';
+    $('modelMeta').textContent = (form.baseUrl || '') + (form.modelId ? '  ·  ' + form.modelId : '');
+    $('modelLimitTip').textContent = form.limitTip || '';
 
     const accounts = form.accounts || [];
     if (accounts.length > 1) {
-      els.accountCard.classList.remove('hidden');
-      els.account.innerHTML = accounts.map(a =>
+      $('accountCard').classList.remove('hidden');
+      $('account').innerHTML = accounts.map(a =>
         '<option value="' + esc(a.id) + '"' + (a.id === form.accountId ? ' selected' : '') + '>' +
         esc(a.name) + '  (' + esc(a.key) + ')</option>'
       ).join('');
-      els.accountMode.value = form.accountMode || 'manual';
-      els.rotateMinutes.value = form.rotateMinutes != null ? form.rotateMinutes : 5;
-      els.rotateEveryN.value = form.rotateEveryNRequests != null ? form.rotateEveryNRequests : 10;
+      $('accountMode').value = form.accountMode || 'manual';
+      $('rotateMinutes').value = form.rotateMinutes != null ? form.rotateMinutes : 5;
+      $('rotateEveryN').value = form.rotateEveryNRequests != null ? form.rotateEveryNRequests : 10;
       syncAccountModeUi();
     } else {
-      els.accountCard.classList.add('hidden');
+      $('accountCard').classList.add('hidden');
     }
+    $('thinking').value = form.thinking || 'high';
+    $('context').value = form.contextWindow === '' || form.contextWindow == null ? '0' : form.contextWindow;
+    $('maxOut').value = form.maxOutputTokens === '' || form.maxOutputTokens == null ? '0' : form.maxOutputTokens;
+    $('temperature').value = form.temperature === '' || form.temperature == null ? '0' : form.temperature;
 
-    els.thinking.value = form.thinking || 'high';
-    els.context.value = form.contextWindow === '' || form.contextWindow == null ? '0' : form.contextWindow;
-    els.maxOut.value = form.maxOutputTokens === '' || form.maxOutputTokens == null ? '0' : form.maxOutputTokens;
-    els.temperature.value = form.temperature === '' || form.temperature == null ? '0' : form.temperature;
-    setStatus(form.hasProxy ? '' : '未找到当前模型配置：请先在 Copilot 选择 Unified Proxy 模型并发送一条消息', form.hasProxy ? '' : 'err');
+    renderProviders();
+    fillCatalogProviderSelect();
+    $('auxVisionLabel').textContent = auxLabel(state.aux.vision && state.aux.vision.ref);
+    $('auxWebLabel').textContent = auxLabel(state.aux.web_extract && state.aux.web_extract.ref);
+    fillAuxPick();
   }
 
-  els.accountMode.addEventListener('change', syncAccountModeUi);
-  els.account.addEventListener('change', () => {
-    const id = els.account.value || '';
-    if (!id || els.account.disabled) return;
-    setStatus('正在切换账号…');
-    vscode.postMessage({
-      type: 'switchAccount',
-      proxyKey: els.proxyKey.value,
-      accountId: id,
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      if (t.disabled) return;
+      showTab(t.dataset.tab);
     });
   });
-  els.save.addEventListener('click', () => {
+  $('accountMode').addEventListener('change', syncAccountModeUi);
+  $('account').addEventListener('change', () => {
+    const id = $('account').value || '';
+    if (!id || $('account').disabled) return;
+    setStatus('正在切换账号…');
+    vscode.postMessage({ type: 'switchAccount', proxyKey: $('proxyKey').value, accountId: id });
+  });
+  $('save').addEventListener('click', () => {
     setStatus('保存中…');
     vscode.postMessage({
-      type: 'save',
+      type: 'saveCurrent',
       payload: {
-        proxyKey: els.proxyKey.value,
-        accountId: els.account.value || '',
-        accountMode: els.accountMode.value,
-        rotateMinutes: els.rotateMinutes.value,
-        rotateEveryNRequests: els.rotateEveryN.value,
-        thinking: els.thinking.value,
-        contextWindow: els.context.value,
-        temperature: els.temperature.value,
-        maxOutputTokens: els.maxOut.value,
+        proxyKey: $('proxyKey').value,
+        accountId: $('account').value || '',
+        accountMode: $('accountMode').value,
+        rotateMinutes: $('rotateMinutes').value,
+        rotateEveryNRequests: $('rotateEveryN').value,
+        thinking: $('thinking').value,
+        contextWindow: $('context').value,
+        temperature: $('temperature').value,
+        maxOutputTokens: $('maxOut').value,
       }
     });
   });
-  els.reload.addEventListener('click', () => vscode.postMessage({ type: 'reload' }));
+  $('reload').addEventListener('click', () => vscode.postMessage({ type: 'reload' }));
+  $('btnUpgrade').addEventListener('click', () => vscode.postMessage({ type: 'upgradeToV2' }));
+  $('btnAddProv').addEventListener('click', () => {
+    vscode.postMessage({
+      type: 'addProvider',
+      payload: { name: $('provName').value, baseUrl: $('provUrl').value, apiKey: $('provKey').value }
+    });
+  });
+  $('providerList').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-del-prov]');
+    if (!btn) return;
+    if (!confirm('删除该供应商及其下模型？')) return;
+    vscode.postMessage({ type: 'deleteProvider', providerId: btn.getAttribute('data-del-prov') });
+  });
+  $('btnRefreshCatalog').addEventListener('click', () => {
+    setStatus('刷新模型目录…');
+    vscode.postMessage({ type: 'refreshCatalog', providerId: $('catalogProvider').value });
+  });
+  $('modelSearch').addEventListener('input', renderCatalog);
+  $('catalogList').addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-toggle]');
+    if (!btn) return;
+    const modelId = btn.getAttribute('data-toggle');
+    const name = btn.getAttribute('data-name') || modelId;
+    const enabled = !btn.classList.contains('on');
+    vscode.postMessage({
+      type: 'toggleModel',
+      payload: {
+        providerId: $('catalogProvider').value,
+        modelId,
+        name,
+        enabled
+      }
+    });
+  });
+  document.querySelectorAll('[data-aux-clear]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'setAux', payload: { kind: btn.getAttribute('data-aux-clear'), ref: null } });
+    });
+  });
+  document.querySelectorAll('[data-aux-change]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      auxEditKind = btn.getAttribute('data-aux-change');
+      const cur = auxEditKind === 'vision'
+        ? (state.aux.vision && state.aux.vision.ref)
+        : (state.aux.web_extract && state.aux.web_extract.ref);
+      $('auxPick').value = cur || '';
+      setStatus('已选中「' + (auxEditKind === 'vision' ? '视觉' : '网页提取') + '」，选模型后点应用');
+    });
+  });
+  $('btnApplyAux').addEventListener('click', () => {
+    const ref = $('auxPick').value || null;
+    vscode.postMessage({ type: 'setAux', payload: { kind: auxEditKind, ref } });
+  });
+  $('btnResetAux').addEventListener('click', () => {
+    vscode.postMessage({ type: 'setAux', payload: { resetAll: true } });
+  });
+
   window.addEventListener('message', (ev) => {
     const msg = ev.data || {};
     if (msg.type === 'state') applyState(msg);
     if (msg.type === 'saved') setStatus(msg.ok ? '已保存' : ('保存失败：' + (msg.error || '')), msg.ok ? 'ok' : 'err');
     if (msg.type === 'accountSwitched') {
-      setStatus(msg.ok ? '账号已切换（立即生效）' : ('切换失败：' + (msg.error || '')), msg.ok ? 'ok' : 'err');
+      setStatus(msg.ok ? '账号已切换' : ('切换失败：' + (msg.error || '')), msg.ok ? 'ok' : 'err');
+    }
+    if (msg.type === 'toast') {
+      setStatus(msg.ok ? (msg.info || '完成') : (msg.error || '失败'), msg.ok ? 'ok' : 'err');
+    }
+    if (msg.type === 'catalog') {
+      if (!msg.ok) {
+        setStatus(msg.error || '刷新失败', 'err');
+        return;
+      }
+      state.catalog = msg.items || [];
+      renderCatalog();
+      setStatus('已刷新 ' + state.catalog.length + ' 个模型', 'ok');
     }
   });
   vscode.postMessage({ type: 'ready' });

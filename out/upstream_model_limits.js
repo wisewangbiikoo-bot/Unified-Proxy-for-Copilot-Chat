@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseModelLimits = parseModelLimits;
 exports.parseModelMeta = parseModelMeta;
 exports.fetchUpstreamModelLimits = fetchUpstreamModelLimits;
+exports.fetchUpstreamModelCatalog = fetchUpstreamModelCatalog;
 exports.clearUpstreamLimitsCache = clearUpstreamLimitsCache;
 exports.buildListHeaders = buildListHeaders;
 
@@ -30,7 +31,7 @@ function logWarn(msg) {
     }
 }
 
-/** @type {Map<string, { at: number, byId: Map<string, object> }>} */
+/** @type {Map<string, { at: number, byId: Map<string, object>, list: Array<{id:string,name:string,meta:object|null}> }>} */
 const catalogCache = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 12000;
@@ -173,11 +174,28 @@ function cacheKey(baseUrl, apiKey) {
  * @param {Record<string, string>|null|undefined} extraHeaders
  * @returns {Promise<Map<string, object>>}
  */
+/**
+ * Full catalog for discovery UI (id + display name + meta).
+ * @returns {Promise<Array<{ id: string, name: string, meta: object|null }>>}
+ */
+async function fetchUpstreamModelCatalog(baseUrl, apiKey, extraHeaders) {
+    const packed = await fetchUpstreamCatalogPacked(baseUrl, apiKey, extraHeaders);
+    return packed.list || [];
+}
+
 async function fetchUpstreamModelLimits(baseUrl, apiKey, extraHeaders) {
+    const packed = await fetchUpstreamCatalogPacked(baseUrl, apiKey, extraHeaders);
+    return packed.byId;
+}
+
+/**
+ * @returns {Promise<{ byId: Map<string, object>, list: Array<{id:string,name:string,meta:object|null}> }>}
+ */
+async function fetchUpstreamCatalogPacked(baseUrl, apiKey, extraHeaders) {
     const key = cacheKey(baseUrl, apiKey);
     const hit = catalogCache.get(key);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-        return hit.byId;
+        return { byId: hit.byId, list: hit.list || [] };
     }
 
     (0, no_proxy_1.applyNoProxyBypass)();
@@ -198,14 +216,16 @@ async function fetchUpstreamModelLimits(baseUrl, apiKey, extraHeaders) {
             throw new Error(`HTTP ${resp.status} ${text.slice(0, 200)}`);
         }
         const body = await resp.json();
-        const list = Array.isArray(body?.data)
+        const rawList = Array.isArray(body?.data)
             ? body.data
             : Array.isArray(body)
               ? body
               : [];
         /** @type {Map<string, object>} */
         const byId = new Map();
-        for (const entry of list) {
+        /** @type {Array<{id:string,name:string,meta:object|null}>} */
+        const list = [];
+        for (const entry of rawList) {
             const id = entry?.id;
             if (!id || typeof id !== "string") {
                 continue;
@@ -214,16 +234,25 @@ async function fetchUpstreamModelLimits(baseUrl, apiKey, extraHeaders) {
             if (meta) {
                 byId.set(id, meta);
             }
+            const name = String(
+                entry.name || entry.display_name || entry.displayName || id,
+            ).trim() || id;
+            list.push({ id, name, meta: meta || null });
         }
-        catalogCache.set(key, { at: Date.now(), byId });
+        catalogCache.set(key, { at: Date.now(), byId, list });
         logInfo(`Upstream /models meta: ${byId.size} models from ${root}`);
-        return byId;
+        return { byId, list };
     }
     catch (e) {
         logWarn(`Failed to fetch upstream model meta from ${url}: ${e?.message || e}`);
         const empty = new Map();
-        catalogCache.set(key, { at: Date.now() - CACHE_TTL_MS + 30000, byId: empty });
-        return empty;
+        const emptyList = [];
+        catalogCache.set(key, {
+            at: Date.now() - CACHE_TTL_MS + 30000,
+            byId: empty,
+            list: emptyList,
+        });
+        return { byId: empty, list: emptyList };
     }
     finally {
         clearTimeout(timer);

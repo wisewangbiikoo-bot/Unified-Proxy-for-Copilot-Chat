@@ -198,7 +198,8 @@ function getRefreshEveryN() {
  */
 function pickUsageProxyTarget(cfg) {
     const account_manager_1 = require("./account_manager");
-    const entries = Object.entries(cfg.proxies || {}).filter(([, proxy]) =>
+    const config_v2_1 = require("./config_v2");
+    const entries = (0, config_v2_1.listProviderEntries)(cfg).filter(([, proxy]) =>
         (0, opencode_headers_1.isOpenCodeGoEndpoint)(proxy?.base_url),
     );
     if (!entries.length) {
@@ -213,7 +214,10 @@ function pickUsageProxyTarget(cfg) {
         catch {
             key = rawId;
         }
-        let hit = entries.find(([k]) => k === key);
+        const lookup = proxy_config_loader_1.getAccountLookupKey
+            ? proxy_config_loader_1.getAccountLookupKey(key, cfg)
+            : key;
+        let hit = entries.find(([k]) => k === lookup || k === key);
         if (!hit) {
             hit = entries.find(([k, p]) => k === rawId || p?.name === rawId || p?.name === key);
         }

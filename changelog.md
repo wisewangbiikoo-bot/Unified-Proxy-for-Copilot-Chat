@@ -2,6 +2,25 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.0] — 2026-10-31
+
+### Added
+
+* **Config schema v2** — `schema_version: 2` with `providers` + `models` + `aux`.
+  Legacy v1 `{ "proxies": … }` still loads read-only; **Upgrade to 2.0** in settings
+  backs up then migrates.
+* **Provider UI** — add / delete OpenAI-compatible backends (URL + API key) in settings.
+* **Model discovery** — Refresh `GET /models`, toggle enable; auto-fill params from
+  upstream limits (`param_source: auto`). User edits mark `param_source: user` and are
+  not overwritten on refresh.
+* **Auxiliary models** — global `aux.vision` (image describe) and `aux.web_extract`
+  (long page tool-result summarize). Default = use main model (`ref: null`).
+
+### Changed
+
+* Copilot picker lists only **enabled** v2 models (`providerId__modelId`).
+* Settings webview tabs: 当前模型 / 供应商 / 模型 / 辅助模型.
+
 ## [1.5.0] — 2026-10-31
 
 ### Added

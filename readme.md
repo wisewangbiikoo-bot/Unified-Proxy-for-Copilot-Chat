@@ -14,12 +14,14 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 
 ## What we added
 
-- One Copilot model entry per proxy in `proxy_configs.json`
+- **Config schema v2** (v2.0.0) — `providers` + enabled `models` + `aux`; UI add provider → Refresh `/models` → toggle models. Legacy v1 `proxies` map still works until you upgrade
+- One Copilot model entry per enabled model (v2) or per proxy (v1)
 - Per-model: images on/off (0/1/2), context window, max output, temperature, default thinking level
-- **Auto limits / vision / tools / thinking from `/v1/models`** (v1.3.3–1.3.5) — omit **or set `0`** on `context_window_size` / `max_output_tokens` / `supports_images` / `supports_tools` / `supports_thinking` to probe upstream (`limit`, `modalities`, `capabilities`). Memory-only (never writes `proxy_configs.json`); force off with `false`/`off` (not bare `0`). Details: [README.zh-cn.md](./README.zh-cn.md)
-- **OpenCode Go usage** (v1.4.0+) — status bar monthly % + Copilot-like hover (month/week/5h meters); account id from `go/status` `subscriberUserId` (not model name). Prefer console meters for %; refresh on window focus / chat / click (hover is detail-only on Stable)
-- **Multi-account API keys** (v1.5.0) — per-proxy `accounts` + `account_switch` (`manual` or `rotate` by minutes / every-N requests); **Switch Account**; active key in `globalState` only
-- **Settings webview** (v1.5.0) — status-bar click / **Unified Proxy: 设置** for account, rotate, thinking, context, max output, temperature
+- **Auto limits / vision / tools / thinking from `/v1/models`** — omit **or set `0`** to probe upstream; v2 stores auto params on enable (`param_source: auto`); user edits → `user`. Details: [README.zh-cn.md](./README.zh-cn.md)
+- **Auxiliary models** (v2.0.0) — global vision (image describe) + web extract (long page summarize) when the chat model cannot
+- **OpenCode Go usage** (v1.4.0+) — status bar monthly % + Copilot-like hover; account id from `go/status` `subscriberUserId`
+- **Multi-account API keys** (v1.5.0+) — provider-level `accounts` + `account_switch`
+- **Settings webview** — tabs: current model / providers / model discovery / aux
 - **Configurable vision proxy** (v1.1.0): each backend can specify its own vision source — VS Code LM, or an API endpoint (OpenAI Chat, Anthropic Messages, OpenAI Responses)
 - **Per-backend vision proxy** (v1.1.0): `vision_proxy` field in `proxy_configs.json` for per-model vision configuration
 - Tool-schema sanitization for OpenAI-compatible gateways
@@ -33,9 +35,9 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 ## Quick start
 
 1. Install the extension.
-2. Edit `~/.vscode/proxy_configs.json` (see [README.zh-cn.md](./README.zh-cn.md) — use placeholders only in docs).
-3. Run **Unified Proxy: Reload Config**.
-4. Pick a model under the **Unified Proxy** vendor in Copilot Chat.
+2. Open **Unified Proxy: 设置** → add a provider (URL + API key) → **模型** → Refresh → enable models  
+   (or keep a v1 `proxies` file / click **升级为 2.0**).
+3. Pick a model under the **Unified Proxy** vendor in Copilot Chat.
 
 ## Commands
 
