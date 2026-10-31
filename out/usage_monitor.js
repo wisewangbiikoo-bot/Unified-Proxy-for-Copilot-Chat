@@ -318,12 +318,13 @@ function collectOpenCodeEndpoints() {
     if (!apiKey) {
         return [];
     }
-    const localAlias = resolved.account?.autoNamed
-        ? ""
-        : String(resolved.account?.name || "").trim();
+    // Prefer provider display name (e.g. "OpenCode Go · gmail") over OC subscriber id
+    const providerName = String(proxy.name || "").trim();
+    const localAlias = providerName
+        || (!resolved.account?.autoNamed ? String(resolved.account?.name || "").trim() : "");
     return [
         {
-            label: proxy.name || key,
+            label: providerName || key,
             proxyKey: key,
             localAlias,
             accountId: resolved.account?.id || "default",
@@ -335,8 +336,12 @@ function collectOpenCodeEndpoints() {
     ];
 }
 
-/** Prefer configured accounts[].name (e.g. email); else OpenCode subscriber short id. */
+/** Prefer supplier/provider name; else accounts[].name; else OpenCode subscriber short id. */
 function resolveAccountDisplayLabel(ep, idn) {
+    const providerName = String(ep?.label || "").trim();
+    if (providerName) {
+        return providerName;
+    }
     const alias = String(ep?.localAlias || "").trim();
     if (alias) {
         return alias;
@@ -639,7 +644,7 @@ function buildHoverMarkdown(snapshot) {
         ? `OpenCode ${String(ep.openCodeProduct).toUpperCase()}`
         : "OpenCode Go";
     const account =
-        ep.openCodeAccountLabel || ep.openCodeAccountId || ep.localAlias || "—";
+        ep.openCodeAccountLabel || ep.label || ep.localAlias || ep.openCodeAccountId || "—";
 
     // ## is larger than ### (hover HTML cannot set font-size — sanitizer strips it)
     md.appendMarkdown(`## ${title}\n\n`);

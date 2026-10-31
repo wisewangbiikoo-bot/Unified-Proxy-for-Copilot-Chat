@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.21] — 2026-10-31
+
+### Fixed
+
+* **Hover「账号」** — show provider name (e.g. `OpenCode Go · gmail`) instead of
+  OpenCode `user_…` subscriber id.
+
 ## [2.0.20] — 2026-10-31
 
 ### Fixed
