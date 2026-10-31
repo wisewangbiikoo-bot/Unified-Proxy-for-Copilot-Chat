@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.16] — 2026-10-31
+
+### Changed
+
+* **辅助模型** — configure OpenAI-compatible `base_url` + `model_id` + `api_key` per
+  vision / web-extract (not pick from enabled list). Legacy `aux.*.ref` still works.
+
 ## [2.0.15] — 2026-10-31
 
 ### Fixed

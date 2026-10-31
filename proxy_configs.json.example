@@ -79,7 +79,15 @@
     ]
   },
   "aux": {
-    "vision": { "ref": "lan-proxy__gemini-2.5-flash-lite" },
-    "web_extract": { "ref": null }
+    "vision": {
+      "base_url": "https://api.example.com/v1",
+      "api_key": "YOUR_VISION_API_KEY",
+      "model_id": "gpt-4o-mini"
+    },
+    "web_extract": {
+      "base_url": "",
+      "api_key": "",
+      "model_id": ""
+    }
   }
 }

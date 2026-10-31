@@ -19,6 +19,8 @@ exports.findModel = findModel;
 exports.modelToProxyShape = modelToProxyShape;
 exports.resolveAuxVisionProxy = resolveAuxVisionProxy;
 exports.resolveAuxWebExtractTarget = resolveAuxWebExtractTarget;
+exports.resolveAuxEndpoint = resolveAuxEndpoint;
+exports.isAuxConfigured = isAuxConfigured;
 exports.paramsFromMeta = paramsFromMeta;
 exports.applyUserParams = applyUserParams;
 exports.ensureUniqueProviderId = ensureUniqueProviderId;
@@ -105,8 +107,8 @@ function emptyV2Config() {
         providers: [],
         models: [],
         aux: {
-            vision: { ref: null },
-            web_extract: { ref: null },
+            vision: { base_url: "", api_key: "", model_id: "" },
+            web_extract: { base_url: "", api_key: "", model_id: "" },
         },
         auto_assign: defaultAutoAssign(),
     };
@@ -597,15 +599,27 @@ function modelToProxyShape(model, provider) {
 }
 
 /**
- * @param {object} cfg
- * @param {(providerId: string, provider: object) => string} [resolveApiKey]
- * @returns {object|null} vision_proxy endpoint shape
+ * Aux entry: inline OpenAI-compatible endpoint, or legacy { ref }.
+ * @returns {{ base_url: string, api_key: string, model_id: string, name: string, custom_headers: object|null }|null}
  */
-function resolveAuxVisionProxy(cfg, resolveApiKey) {
-    if (!isV2Config(cfg)) {
+function resolveAuxEndpoint(cfg, entry, resolveApiKey) {
+    if (!entry || typeof entry !== "object") {
         return null;
     }
-    const ref = cfg.aux?.vision?.ref;
+    const baseUrl = String(entry.base_url || entry.baseUrl || "").trim();
+    const modelId = String(entry.model_id || entry.modelId || "").trim();
+    const apiKeyInline = String(entry.api_key || entry.apiKey || "").trim();
+    if (baseUrl && modelId) {
+        return {
+            base_url: baseUrl,
+            api_key: apiKeyInline,
+            model_id: modelId,
+            name: String(entry.name || modelId).trim() || modelId,
+            custom_headers: entry.custom_headers || entry.customHeaders || null,
+        };
+    }
+    // Legacy: ref → provider + enabled model
+    const ref = entry.ref;
     if (!ref) {
         return null;
     }
@@ -622,33 +636,64 @@ function resolveAuxVisionProxy(cfg, resolveApiKey) {
             ? resolveApiKey(provider.id, provider) || provider.api_key
             : provider.api_key;
     return {
-        type: "endpoint",
-        protocol: "openai-chat",
         base_url: provider.base_url,
-        api_key: apiKey || "",
+        api_key: String(apiKey || "").trim(),
         model_id: model.model_id,
+        name: model.name || model.model_id,
         custom_headers: provider.custom_headers || provider.customHeaders || null,
+        openCodeSession: provider.opencode_session || "",
     };
 }
 
 /**
  * @param {object} cfg
- * @returns {{ model: object, provider: object }|null}
+ * @param {(providerId: string, provider: object) => string} [resolveApiKey]
+ * @returns {object|null} vision_proxy endpoint shape
+ */
+function resolveAuxVisionProxy(cfg, resolveApiKey) {
+    if (!isV2Config(cfg)) {
+        return null;
+    }
+    const ep = resolveAuxEndpoint(cfg, cfg.aux?.vision, resolveApiKey);
+    if (!ep?.base_url || !ep.model_id) {
+        return null;
+    }
+    return {
+        type: "endpoint",
+        protocol: "openai-chat",
+        base_url: ep.base_url,
+        api_key: ep.api_key || "",
+        model_id: ep.model_id,
+        custom_headers: ep.custom_headers || null,
+    };
+}
+
+/**
+ * @param {object} cfg
+ * @returns {{ base_url: string, api_key: string, model_id: string, name: string, custom_headers?: object|null, openCodeSession?: string }|null}
  */
 function resolveAuxWebExtractTarget(cfg) {
     if (!isV2Config(cfg)) {
         return null;
     }
-    const ref = cfg.aux?.web_extract?.ref;
-    if (!ref) {
+    const ep = resolveAuxEndpoint(cfg, cfg.aux?.web_extract, null);
+    if (!ep?.base_url || !ep.model_id || !ep.api_key) {
         return null;
     }
-    const model = findModel(cfg, ref);
-    const provider = model ? findProvider(cfg, model.provider_id) : null;
-    if (!model || !provider?.base_url) {
-        return null;
+    return ep;
+}
+
+/** True when aux entry has usable inline endpoint or legacy ref. */
+function isAuxConfigured(entry) {
+    if (!entry || typeof entry !== "object") {
+        return false;
     }
-    return { model, provider };
+    if (String(entry.ref || "").trim()) {
+        return true;
+    }
+    const baseUrl = String(entry.base_url || entry.baseUrl || "").trim();
+    const modelId = String(entry.model_id || entry.modelId || "").trim();
+    return Boolean(baseUrl && modelId);
 }
 
 /**

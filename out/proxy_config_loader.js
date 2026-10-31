@@ -22,7 +22,7 @@ const logger_1 = require("./logger");
 const CONFIG_SECTION = "unified-proxy-copilot";
 /** When max_output_tokens unset, use 0 so Copilot shows input context only (not input+output). */
 const UNLIMITED_OUTPUT_DISPLAY_TOKENS = 0;
-const EMPTY_CONFIG = '{\n  "schema_version": 2,\n  "providers": [],\n  "models": [],\n  "aux": { "vision": { "ref": null }, "web_extract": { "ref": null } }\n}\n';
+const EMPTY_CONFIG = '{\n  "schema_version": 2,\n  "providers": [],\n  "models": [],\n  "aux": {\n    "vision": { "base_url": "", "api_key": "", "model_id": "" },\n    "web_extract": { "base_url": "", "api_key": "", "model_id": "" }\n  }\n}\n';
 /** Multi-account model id: `${proxyKey}:::${accountId}` (shown as separate Copilot models). */
 const MODEL_ACCOUNT_SEP = ":::";
 exports.MODEL_ACCOUNT_SEP = MODEL_ACCOUNT_SEP;
@@ -411,6 +411,8 @@ function getProxyConfigV2(cfg, modelEntryId, accountId) {
         schemaVersion: 2,
         auxVisionRef: cfg.aux?.vision?.ref || null,
         auxWebExtractRef: cfg.aux?.web_extract?.ref || null,
+        hasAuxVision: (0, config_v2_1.isAuxConfigured)(cfg.aux?.vision),
+        hasAuxWebExtract: (0, config_v2_1.isAuxConfigured)(cfg.aux?.web_extract),
     };
 }
 

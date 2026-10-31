@@ -562,9 +562,33 @@ async function postState(webview, proxyKeyHint) {
                 paramSource: m.param_source || "auto",
             });
         }
+        const packAux = (entry) => {
+            if (!entry || typeof entry !== "object") {
+                return {
+                    configured: false,
+                    baseUrl: "",
+                    modelId: "",
+                    apiKeyMasked: "",
+                    hasKey: false,
+                    ref: null,
+                };
+            }
+            const baseUrl = String(entry.base_url || entry.baseUrl || "").trim();
+            const modelId = String(entry.model_id || entry.modelId || "").trim();
+            const key = String(entry.api_key || entry.apiKey || "").trim();
+            const ref = entry.ref ? String(entry.ref) : null;
+            return {
+                configured: config_v2_1.isAuxConfigured(entry),
+                baseUrl,
+                modelId,
+                apiKeyMasked: key ? account_manager_1.maskApiKey(key) : "",
+                hasKey: Boolean(key),
+                ref,
+            };
+        };
         aux = {
-            vision: { ref: cfg.aux?.vision?.ref ?? null },
-            web_extract: { ref: cfg.aux?.web_extract?.ref ?? null },
+            vision: packAux(cfg.aux?.vision),
+            web_extract: packAux(cfg.aux?.web_extract),
         };
         try {
             const auto_assign_1 = require("./auto_assign");
@@ -1075,6 +1099,10 @@ async function toggleModel(payload) {
     return { ok: true, info: "已关闭（未入库）" };
 }
 
+function emptyAuxEndpoint() {
+    return { base_url: "", api_key: "", model_id: "" };
+}
+
 async function setAux(payload) {
     const gate = await requireV2();
     if (!gate.ok) {
@@ -1082,30 +1110,45 @@ async function setAux(payload) {
     }
     const cfg = gate.cfg;
     if (!cfg.aux) {
-        cfg.aux = { vision: { ref: null }, web_extract: { ref: null } };
+        cfg.aux = { vision: emptyAuxEndpoint(), web_extract: emptyAuxEndpoint() };
     }
     const kind = String(payload.kind || "").trim();
     if (payload.resetAll) {
-        cfg.aux.vision = { ref: null };
-        cfg.aux.web_extract = { ref: null };
+        cfg.aux.vision = emptyAuxEndpoint();
+        cfg.aux.web_extract = emptyAuxEndpoint();
         proxy_config_loader_1.writeConfigFile(cfg);
         return { ok: true, info: "辅助模型已全部重置为主模型" };
     }
-    let ref = payload.ref;
-    if (ref === "" || ref === undefined) {
-        ref = null;
-    }
-    if (kind === "vision") {
-        cfg.aux.vision = { ref };
-    }
-    else if (kind === "web_extract") {
-        cfg.aux.web_extract = { ref };
-    }
-    else {
+    if (kind !== "vision" && kind !== "web_extract") {
         return { ok: false, error: "未知辅助类型" };
     }
+    if (payload.clear) {
+        cfg.aux[kind] = emptyAuxEndpoint();
+        proxy_config_loader_1.writeConfigFile(cfg);
+        return { ok: true, info: kind === "vision" ? "视觉已改回主模型" : "网页提取已改回主模型" };
+    }
+    const baseUrl = String(payload.baseUrl ?? payload.base_url ?? "").trim();
+    const modelId = String(payload.modelId ?? payload.model_id ?? "").trim();
+    const apiKeyNew = String(payload.apiKey ?? payload.api_key ?? "");
+    if (!baseUrl || !modelId) {
+        return { ok: false, error: "请填写 Base URL 和模型名" };
+    }
+    const prev = cfg.aux[kind] && typeof cfg.aux[kind] === "object" ? cfg.aux[kind] : {};
+    const prevKey = String(prev.api_key || prev.apiKey || "").trim();
+    const apiKey = apiKeyNew.trim() ? apiKeyNew.trim() : prevKey;
+    if (!apiKey) {
+        return { ok: false, error: "请填写 API Key" };
+    }
+    cfg.aux[kind] = {
+        base_url: baseUrl.replace(/\/$/, ""),
+        model_id: modelId,
+        api_key: apiKey,
+    };
     proxy_config_loader_1.writeConfigFile(cfg);
-    return { ok: true, info: "辅助模型已更新" };
+    return {
+        ok: true,
+        info: kind === "vision" ? "视觉辅助模型已保存" : "网页提取辅助模型已保存",
+    };
 }
 
 async function saveAutoAssign(payload) {
@@ -1491,33 +1534,28 @@ function getHtml() {
         <h2 style="margin:0">辅助模型</h2>
         <button class="linkish" id="btnResetAux">全部重置为主模型</button>
       </div>
-      <div class="sub">辅助任务默认使用主模型。你可以为任意任务指定专用模型。</div>
-      <div class="list-row">
-        <div class="list-main">
-          <div>视觉 <span class="tag">图片分析</span></div>
-          <div class="sub" id="auxVisionLabel">自动 · 使用主模型</div>
-        </div>
-        <div class="aux-actions">
-          <button class="linkish" data-aux-clear="vision">设为主模型</button>
-          <button class="linkish" data-aux-change="vision">更改</button>
-        </div>
-      </div>
-      <div class="list-row">
-        <div class="list-main">
-          <div>网页提取 <span class="tag">页面总结</span></div>
-          <div class="sub" id="auxWebLabel">自动 · 使用主模型</div>
-        </div>
-        <div class="aux-actions">
-          <button class="linkish" data-aux-clear="web_extract">设为主模型</button>
-          <button class="linkish" data-aux-change="web_extract">更改</button>
-        </div>
-      </div>
-      <div class="row" id="auxPickRow" style="margin-top:12px">
-        <label>选择模型</label>
-        <select id="auxPick"></select>
-      </div>
+      <div class="sub">主对话仍走供应商列表。这里为「视觉 / 网页提取」单独填一个 OpenAI 兼容接口（Base URL + 模型名 + API Key）。留空或点清除 = 用主模型。</div>
+    </div>
+    <div class="card">
+      <h2>视觉 <span class="tag">图片分析</span></h2>
+      <div class="sub" id="auxVisionStatus">自动 · 使用主模型</div>
+      <div class="row"><label>Base URL</label><input id="auxVisionUrl" placeholder="https://api.example.com/v1" /></div>
+      <div class="row"><label>模型名</label><input id="auxVisionModel" placeholder="gpt-4o-mini" /></div>
+      <div class="row"><label>API Key</label><input id="auxVisionKey" type="password" placeholder="必填；已保存时留空则不改" /></div>
       <div class="actions">
-        <button class="primary" id="btnApplyAux">应用所选</button>
+        <button class="primary" id="btnSaveAuxVision">保存视觉</button>
+        <button class="secondary" id="btnClearAuxVision">清除（用主模型）</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>网页提取 <span class="tag">页面总结</span></h2>
+      <div class="sub" id="auxWebStatus">自动 · 使用主模型</div>
+      <div class="row"><label>Base URL</label><input id="auxWebUrl" placeholder="https://api.example.com/v1" /></div>
+      <div class="row"><label>模型名</label><input id="auxWebModel" placeholder="gpt-4o-mini" /></div>
+      <div class="row"><label>API Key</label><input id="auxWebKey" type="password" placeholder="必填；已保存时留空则不改" /></div>
+      <div class="actions">
+        <button class="primary" id="btnSaveAuxWeb">保存网页提取</button>
+        <button class="secondary" id="btnClearAuxWeb">清除（用主模型）</button>
       </div>
     </div>
   </div>
@@ -1530,8 +1568,6 @@ function getHtml() {
     catalog: [], catalogCache: {}, catalogProviderId: ''
   };
   const pendingToggles = new Set(); // modelId currently saving — ignore duplicate pointer events
-  let auxEditKind = 'vision';
-
   function setStatus(text, kind) {
     const el = $('status');
     el.textContent = text || '';
@@ -1565,11 +1601,32 @@ function getHtml() {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   }
-  function auxLabel(ref) {
-    if (!ref) return '自动 · 使用主模型';
-    const m = (state.enabledModels || []).find(x => x.id === ref);
-    if (!m) return ref;
-    return (m.providerName || m.providerId) + ' · ' + (m.name || m.modelId);
+  function auxStatusText(entry) {
+    if (!entry || !entry.configured) return '自动 · 使用主模型';
+    if (entry.baseUrl && entry.modelId) {
+      return entry.modelId + ' @ ' + entry.baseUrl +
+        (entry.apiKeyMasked ? ' · key ' + entry.apiKeyMasked : '');
+    }
+    if (entry.ref) return '旧引用 · ' + entry.ref;
+    return '已配置';
+  }
+  function fillAuxForms() {
+    const v = state.aux.vision || {};
+    const w = state.aux.web_extract || {};
+    $('auxVisionStatus').textContent = auxStatusText(v);
+    $('auxWebStatus').textContent = auxStatusText(w);
+    $('auxVisionUrl').value = v.baseUrl || '';
+    $('auxVisionModel').value = v.modelId || '';
+    $('auxVisionKey').value = '';
+    $('auxVisionKey').placeholder = v.hasKey
+      ? ('当前 ' + (v.apiKeyMasked || '***') + ' · 留空不改')
+      : '必填';
+    $('auxWebUrl').value = w.baseUrl || '';
+    $('auxWebModel').value = w.modelId || '';
+    $('auxWebKey').value = '';
+    $('auxWebKey').placeholder = w.hasKey
+      ? ('当前 ' + (w.apiKeyMasked || '***') + ' · 留空不改')
+      : '必填';
   }
   function clearProvEdit() {
     $('provEditId').value = '';
@@ -1779,13 +1836,6 @@ function getHtml() {
         '" data-name="' + esc(it.name) + '" title="' + (it.enabled ? '点击禁用' : '点击启用') + '"></div></div>'
     ).join('');
   }
-  function fillAuxPick() {
-    const sel = $('auxPick');
-    sel.innerHTML = '<option value="">自动 · 使用主模型</option>' +
-      (state.enabledModels || []).map(m =>
-        '<option value="' + esc(m.id) + '">' + esc(m.providerName + ' · ' + m.name) + '</option>'
-      ).join('');
-  }
   function applyState(msg) {
     state.isV2 = Boolean(msg.isV2);
     state.providers = msg.providers || [];
@@ -1849,9 +1899,7 @@ function getHtml() {
     } else {
       loadCatalogForProvider(pid, true);
     }
-    $('auxVisionLabel').textContent = auxLabel(state.aux.vision && state.aux.vision.ref);
-    $('auxWebLabel').textContent = auxLabel(state.aux.web_extract && state.aux.web_extract.ref);
-    fillAuxPick();
+    fillAuxForms();
   }
 
   document.querySelectorAll('.tab').forEach(t => {
@@ -2015,24 +2063,25 @@ function getHtml() {
       ev.stopPropagation();
     }
   });
-  document.querySelectorAll('[data-aux-clear]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      vscode.postMessage({ type: 'setAux', payload: { kind: btn.getAttribute('data-aux-clear'), ref: null } });
+  function saveAuxKind(kind) {
+    const isVision = kind === 'vision';
+    vscode.postMessage({
+      type: 'setAux',
+      payload: {
+        kind,
+        baseUrl: $(isVision ? 'auxVisionUrl' : 'auxWebUrl').value,
+        modelId: $(isVision ? 'auxVisionModel' : 'auxWebModel').value,
+        apiKey: $(isVision ? 'auxVisionKey' : 'auxWebKey').value,
+      }
     });
+  }
+  $('btnSaveAuxVision').addEventListener('click', () => saveAuxKind('vision'));
+  $('btnSaveAuxWeb').addEventListener('click', () => saveAuxKind('web_extract'));
+  $('btnClearAuxVision').addEventListener('click', () => {
+    vscode.postMessage({ type: 'setAux', payload: { kind: 'vision', clear: true } });
   });
-  document.querySelectorAll('[data-aux-change]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      auxEditKind = btn.getAttribute('data-aux-change');
-      const cur = auxEditKind === 'vision'
-        ? (state.aux.vision && state.aux.vision.ref)
-        : (state.aux.web_extract && state.aux.web_extract.ref);
-      $('auxPick').value = cur || '';
-      setStatus('已选中「' + (auxEditKind === 'vision' ? '视觉' : '网页提取') + '」，选模型后点应用');
-    });
-  });
-  $('btnApplyAux').addEventListener('click', () => {
-    const ref = $('auxPick').value || null;
-    vscode.postMessage({ type: 'setAux', payload: { kind: auxEditKind, ref } });
+  $('btnClearAuxWeb').addEventListener('click', () => {
+    vscode.postMessage({ type: 'setAux', payload: { kind: 'web_extract', clear: true } });
   });
   $('btnResetAux').addEventListener('click', () => {
     vscode.postMessage({ type: 'setAux', payload: { resetAll: true } });

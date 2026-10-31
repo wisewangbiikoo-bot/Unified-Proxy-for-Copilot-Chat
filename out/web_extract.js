@@ -46,7 +46,7 @@ function looksLikeWebPageContent(text) {
  * @returns {Promise<vscode.LanguageModelChatMessage[]>}
  */
 async function maybeSummarizeWebToolResults(messages, proxyConfig, token) {
-    if (!proxyConfig || proxyConfig.schemaVersion !== 2 || !proxyConfig.auxWebExtractRef) {
+    if (!proxyConfig || proxyConfig.schemaVersion !== 2 || !proxyConfig.hasAuxWebExtract) {
         return messages;
     }
     const { ok, cfg } = proxy_config_loader_1.readConfigFile();
@@ -57,7 +57,7 @@ async function maybeSummarizeWebToolResults(messages, proxyConfig, token) {
     if (!target) {
         return messages;
     }
-    const apiKey = String(target.provider.api_key || "").trim();
+    const apiKey = String(target.api_key || "").trim();
     if (!apiKey) {
         return messages;
     }
@@ -106,7 +106,7 @@ async function maybeSummarizeWebToolResults(messages, proxyConfig, token) {
     }
     if (changed) {
         logger_1.logger.info(
-            `web_extract: summarized tool result(s) via ${target.model.id}`,
+            `web_extract: summarized tool result(s) via ${target.model_id}`,
         );
     }
     return out;
@@ -126,13 +126,13 @@ async function summarizeToolResultPart(part, target, apiKey, token) {
         return null;
     }
     const summary = await callSummarize(
-        target.provider.base_url,
+        target.base_url,
         apiKey,
-        target.model.model_id,
-        target.provider.custom_headers || target.provider.opencode_session
+        target.model_id,
+        target.custom_headers || target.openCodeSession
             ? {
-                customHeaders: target.provider.custom_headers,
-                openCodeSession: target.provider.opencode_session || "",
+                customHeaders: target.custom_headers,
+                openCodeSession: target.openCodeSession || "",
             }
             : null,
         text,
@@ -142,7 +142,7 @@ async function summarizeToolResultPart(part, target, apiKey, token) {
         return null;
     }
     const note =
-        `[网页提取 · 辅助模型摘要 ${target.model.name || target.model.model_id}]\n\n` +
+        `[网页提取 · 辅助模型摘要 ${target.name || target.model_id}]\n\n` +
         summary;
     return new vscode.LanguageModelToolResultPart(part.callId, [
         new vscode.LanguageModelTextPart(note),
