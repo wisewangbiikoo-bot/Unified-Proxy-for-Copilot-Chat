@@ -965,6 +965,15 @@ function notifyChatUsage(proxyKey, baseUrl) {
         catch {
             /* optional */
         }
+        try {
+            const auto_assign_1 = require("./auto_assign");
+            if (auto_assign_1.isAutoAssignModelId(proxyKey)) {
+                auto_assign_1.notifyAutoAssignChatRequest();
+            }
+        }
+        catch {
+            /* optional */
+        }
     }
     if (getShowMode() === "off") {
         return;

@@ -133,6 +133,18 @@ async function activate(context) {
         }
         reloadModelsFromConfig(false);
         watchProxyConfigFile(context);
+        try {
+            const auto_assign_1 = require("./auto_assign");
+            auto_assign_1.initAutoAssign(context, {
+                onChanged: () => {
+                    reloadModelsFromConfig(false);
+                    void usageMonitorApi?.refresh?.();
+                },
+            });
+        }
+        catch (e) {
+            logger_1.logger.warn(`auto_assign init failed: ${e?.message || e}`);
+        }
         accountManagerApi = (0, account_manager_1.initAccountManager)(context, {
             onAccountChanged: () => {
                 void usageMonitorApi?.refresh?.();

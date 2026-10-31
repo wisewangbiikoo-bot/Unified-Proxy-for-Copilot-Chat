@@ -23,6 +23,8 @@ exports.paramsFromMeta = paramsFromMeta;
 exports.applyUserParams = applyUserParams;
 exports.ensureUniqueProviderId = ensureUniqueProviderId;
 exports.emptyV2Config = emptyV2Config;
+exports.normalizeV2Config = normalizeV2Config;
+exports.defaultAutoAssign = defaultAutoAssign;
 
 const SCHEMA_VERSION = exports.SCHEMA_VERSION;
 const MODEL_SEP = exports.MODEL_SEP;
@@ -88,6 +90,15 @@ function slugifyId(text) {
     return s || "provider";
 }
 
+function defaultAutoAssign() {
+    return {
+        mode: "manual",
+        rotate_minutes: 5,
+        rotate_every_n_requests: 10,
+        model_ids: [],
+    };
+}
+
 function emptyV2Config() {
     return {
         schema_version: SCHEMA_VERSION,
@@ -97,7 +108,219 @@ function emptyV2Config() {
             vision: { ref: null },
             web_extract: { ref: null },
         },
+        auto_assign: defaultAutoAssign(),
     };
+}
+
+/**
+ * Expand legacy provider.accounts into separate providers (one key each).
+ * Moves provider.account_switch into top-level auto_assign when needed.
+ * Mutates and returns cfg.
+ * @param {object} cfg
+ */
+function normalizeV2Config(cfg) {
+    if (!cfg || typeof cfg !== "object") {
+        return cfg;
+    }
+    if (!cfg.auto_assign || typeof cfg.auto_assign !== "object") {
+        cfg.auto_assign = defaultAutoAssign();
+    }
+    if (!Array.isArray(cfg.auto_assign.model_ids)) {
+        cfg.auto_assign.model_ids = [];
+    }
+    const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
+    const models = Array.isArray(cfg.models) ? cfg.models : [];
+    /** @type {object[]} */
+    const nextProviders = [];
+    /** @type {Map<string, string[]>} oldProviderId -> new provider ids */
+    const remap = new Map();
+    /** @type {string[]} */
+    const autoFromAccounts = [];
+
+    for (const prov of providers) {
+        if (!prov || typeof prov !== "object") {
+            continue;
+        }
+        const accounts = Array.isArray(prov.accounts) ? prov.accounts : null;
+        const switchCfg = prov.account_switch || prov.accountSwitch;
+        if (accounts && accounts.length > 0) {
+            const ids = [];
+            accounts.forEach((item, i) => {
+                let apiKey = "";
+                let accName = `账号${i + 1}`;
+                let accId = `key-${i + 1}`;
+                if (typeof item === "string") {
+                    apiKey = item.trim();
+                }
+                else if (item && typeof item === "object") {
+                    apiKey = String(item.api_key || item.apiKey || item.key || "").trim();
+                    accName = String(item.name || item.label || accId).trim() || accId;
+                    accId = String(item.id || accName || accId).trim() || accId;
+                }
+                if (!apiKey) {
+                    return;
+                }
+                const baseName = String(prov.name || prov.id || "provider");
+                const newId = ensureUniqueProviderId(
+                    [...nextProviders, ...providers.filter((p) => !p.accounts)],
+                    slugifyId(`${baseName}-${accId}`),
+                );
+                nextProviders.push({
+                    id: newId,
+                    name: accounts.length > 1 ? `${baseName} · ${accName}` : baseName,
+                    base_url: prov.base_url,
+                    api_key: apiKey,
+                    ...(prov.custom_headers ? { custom_headers: prov.custom_headers } : {}),
+                    ...(prov.opencode_session ? { opencode_session: prov.opencode_session } : {}),
+                });
+                ids.push(newId);
+            });
+            if (!ids.length) {
+                // fallback single key
+                nextProviders.push(stripProviderAccounts(prov));
+                remap.set(prov.id, [prov.id]);
+            }
+            else {
+                remap.set(prov.id, ids);
+                if (ids.length > 1) {
+                    for (const m of models.filter((x) => x.provider_id === prov.id)) {
+                        // will remapped below — collect auto pool model ids after remap
+                    }
+                    if (switchCfg) {
+                        applySwitchToAutoAssign(cfg.auto_assign, switchCfg);
+                    }
+                }
+            }
+        }
+        else {
+            nextProviders.push(stripProviderAccounts(prov));
+            remap.set(prov.id, [prov.id]);
+        }
+    }
+
+    // Remap models: one model entry per new provider when old provider was split
+    /** @type {object[]} */
+    const nextModels = [];
+    for (const model of models) {
+        const newProvIds = remap.get(model.provider_id) || [model.provider_id];
+        if (newProvIds.length === 1 && newProvIds[0] === model.provider_id) {
+            nextModels.push(model);
+            continue;
+        }
+        for (const pid of newProvIds) {
+            const newId = makeModelId(pid, model.model_id);
+            if (nextModels.some((m) => m.id === newId)) {
+                continue;
+            }
+            const prov = nextProviders.find((p) => p.id === pid);
+            nextModels.push({
+                ...model,
+                id: newId,
+                provider_id: pid,
+                name:
+                    newProvIds.length > 1
+                        ? `${model.name || model.model_id} · ${(prov?.name || pid).split("·").pop()?.trim() || pid}`
+                        : model.name,
+            });
+            autoFromAccounts.push(newId);
+        }
+    }
+
+    cfg.providers = nextProviders;
+    cfg.models = nextModels;
+
+    if (autoFromAccounts.length && !(cfg.auto_assign.model_ids || []).length) {
+        cfg.auto_assign.model_ids = [...new Set(autoFromAccounts)];
+    }
+
+    cfg.providers = (cfg.providers || []).map((p) => stripProviderAccounts(p));
+    return cfg;
+}
+
+function stripProviderAccounts(prov) {
+    delete prov.accounts;
+    delete prov.account_switch;
+    delete prov.accountSwitch;
+    delete prov.api_keys;
+    delete prov.apiKeys;
+    return {
+        id: prov.id,
+        name: prov.name || prov.id,
+        base_url: prov.base_url,
+        api_key: String(prov.api_key || ""),
+        ...(prov.custom_headers ? { custom_headers: prov.custom_headers } : {}),
+        ...(prov.opencode_session ? { opencode_session: prov.opencode_session } : {}),
+    };
+}
+
+function applySwitchToAutoAssign(autoAssign, switchCfg) {
+    let mode = String(switchCfg.mode || "manual").trim().toLowerCase();
+    if (mode === "rotate_requests" || mode === "requests") {
+        mode = "rotate_requests";
+    }
+    else if (mode === "auto" || mode === "rotate" || mode === "time") {
+        mode = "rotate";
+    }
+    else {
+        mode = "manual";
+    }
+    autoAssign.mode = mode;
+    if (switchCfg.rotate_minutes != null) {
+        autoAssign.rotate_minutes = Number(switchCfg.rotate_minutes) || 5;
+    }
+    if (switchCfg.rotate_every_n_requests != null) {
+        autoAssign.rotate_every_n_requests =
+            Number(switchCfg.rotate_every_n_requests) || 10;
+    }
+}
+
+/**
+ * Collect account keys from a v1 proxy (legacy multi-key or single api_key).
+ * @param {object} proxy
+ * @returns {Array<{id:string,name:string,api_key:string}>}
+ */
+function extractV1Accounts(proxy) {
+    const rawList = proxy?.accounts || proxy?.api_keys || proxy?.apiKeys;
+    /** @type {Array<{id:string,name:string,api_key:string}>} */
+    const accounts = [];
+    if (Array.isArray(rawList) && rawList.length) {
+        rawList.forEach((item, i) => {
+            if (typeof item === "string" && item.trim()) {
+                accounts.push({
+                    id: `key-${i + 1}`,
+                    name: `账号${i + 1}`,
+                    api_key: item.trim(),
+                });
+                return;
+            }
+            if (item && typeof item === "object") {
+                const key = String(item.api_key || item.apiKey || item.key || "").trim();
+                if (!key) {
+                    return;
+                }
+                const id = String(item.id || item.name || `key-${i + 1}`).trim() || `key-${i + 1}`;
+                const name = String(item.name || item.label || id).trim() || id;
+                accounts.push({ id, name, api_key: key });
+            }
+        });
+    }
+    if (!accounts.length) {
+        const legacy = String(proxy?.api_key || proxy?.apiKey || "").trim();
+        if (legacy) {
+            accounts.push({ id: "default", name: "default", api_key: legacy });
+        }
+    }
+    // dedupe by key
+    const seen = new Set();
+    const uniq = [];
+    for (const a of accounts) {
+        if (seen.has(a.api_key)) {
+            continue;
+        }
+        seen.add(a.api_key);
+        uniq.push(a);
+    }
+    return uniq;
 }
 
 /**
@@ -106,9 +329,10 @@ function emptyV2Config() {
  */
 function migrateV1ToV2(cfg) {
     const out = emptyV2Config();
-    const byUrl = new Map();
     /** @type {string|null} */
     let visionRef = null;
+    /** @type {string[]} */
+    const autoIds = [];
 
     for (const [key, proxy] of Object.entries(cfg?.proxies || {})) {
         if (!proxy || typeof proxy !== "object") {
@@ -118,26 +342,33 @@ function migrateV1ToV2(cfg) {
         if (!baseUrl) {
             continue;
         }
-        const urlKey = baseUrl.replace(/\/$/, "").toLowerCase();
-        let providerId = byUrl.get(urlKey);
-        if (!providerId) {
-            providerId = ensureUniqueProviderId(
+        const accounts = extractV1Accounts(proxy);
+        if (!accounts.length) {
+            continue;
+        }
+        const switchCfg = proxy.account_switch || proxy.accountSwitch || {};
+        if (accounts.length > 1) {
+            applySwitchToAutoAssign(out.auto_assign, switchCfg);
+        }
+
+        const upstreamModelId = String(proxy.model_id || proxy.modelId || key).trim();
+        const params = extractParamsFromV1Proxy(proxy);
+        const baseName = String(proxy.name || key || "provider");
+        const groupModelIds = [];
+
+        for (const acc of accounts) {
+            const providerId = ensureUniqueProviderId(
                 out.providers,
-                slugifyId(proxy.name || key || "provider"),
+                slugifyId(
+                    accounts.length > 1 ? `${baseName}-${acc.id}` : baseName || key,
+                ),
             );
-            byUrl.set(urlKey, providerId);
             const prov = {
                 id: providerId,
-                name: String(proxy.name || key || providerId),
+                name: accounts.length > 1 ? `${baseName} · ${acc.name}` : baseName,
                 base_url: baseUrl,
-                api_key: String(proxy.api_key || proxy.apiKey || ""),
+                api_key: acc.api_key,
             };
-            if (Array.isArray(proxy.accounts) && proxy.accounts.length) {
-                prov.accounts = proxy.accounts;
-            }
-            if (proxy.account_switch || proxy.accountSwitch) {
-                prov.account_switch = proxy.account_switch || proxy.accountSwitch;
-            }
             if (proxy.custom_headers || proxy.customHeaders) {
                 prov.custom_headers = proxy.custom_headers || proxy.customHeaders;
             }
@@ -145,21 +376,27 @@ function migrateV1ToV2(cfg) {
                 prov.opencode_session = proxy.opencode_session || proxy.openCodeSession;
             }
             out.providers.push(prov);
-        }
 
-        const upstreamModelId = String(proxy.model_id || proxy.modelId || key).trim();
-        const modelEntryId = makeModelId(providerId, upstreamModelId);
-        if (!out.models.some((m) => m.id === modelEntryId)) {
-            out.models.push({
-                id: modelEntryId,
-                provider_id: providerId,
-                model_id: upstreamModelId,
-                enabled: true,
-                name: String(proxy.name || upstreamModelId),
-                description: String(proxy.description || ""),
-                params: extractParamsFromV1Proxy(proxy),
-                param_source: "user",
-            });
+            const modelEntryId = makeModelId(providerId, upstreamModelId);
+            if (!out.models.some((m) => m.id === modelEntryId)) {
+                out.models.push({
+                    id: modelEntryId,
+                    provider_id: providerId,
+                    model_id: upstreamModelId,
+                    enabled: true,
+                    name:
+                        accounts.length > 1
+                            ? `${proxy.name || upstreamModelId} · ${acc.name}`
+                            : String(proxy.name || upstreamModelId),
+                    description: String(proxy.description || ""),
+                    params: { ...params },
+                    param_source: "user",
+                });
+            }
+            groupModelIds.push(modelEntryId);
+        }
+        if (groupModelIds.length > 1) {
+            autoIds.push(...groupModelIds);
         }
 
         if (!visionRef && (proxy.vision_proxy || proxy.visionProxy)) {
@@ -172,7 +409,10 @@ function migrateV1ToV2(cfg) {
 
     out.aux.vision.ref = visionRef;
     out.aux.web_extract.ref = null;
-    return out;
+    if (autoIds.length) {
+        out.auto_assign.model_ids = [...new Set(autoIds)];
+    }
+    return normalizeV2Config(out);
 }
 
 function extractParamsFromV1Proxy(proxy) {
@@ -303,8 +543,6 @@ function providerToProxyShape(provider) {
         name: provider.name || provider.id,
         base_url: provider.base_url,
         api_key: provider.api_key,
-        accounts: provider.accounts,
-        account_switch: provider.account_switch,
         custom_headers: provider.custom_headers || provider.customHeaders,
         opencode_session: provider.opencode_session || provider.openCodeSession,
     };
@@ -345,8 +583,6 @@ function modelToProxyShape(model, provider) {
         description: model.description || "",
         base_url: provider.base_url,
         api_key: provider.api_key,
-        accounts: provider.accounts,
-        account_switch: provider.account_switch,
         model_id: model.model_id,
         custom_headers: provider.custom_headers || provider.customHeaders,
         opencode_session: provider.opencode_session || provider.openCodeSession,

@@ -192,6 +192,15 @@ async function handleMessage(msg, opts) {
         }
         return;
     }
+    if (type === "saveAutoAssign") {
+        const result = await saveAutoAssign(msg.payload || {});
+        panel.webview.postMessage({ type: "toast", ok: result.ok, error: result.error, info: result.info });
+        if (result.ok) {
+            onSaved?.();
+            await postState(panel.webview, opts.proxyKey);
+        }
+        return;
+    }
 }
 
 function resolveCurrentProxyKey(hint) {
@@ -344,15 +353,14 @@ async function postState(webview, proxyKeyHint) {
     const providers = [];
     const enabledModels = [];
     let aux = { vision: { ref: null }, web_extract: { ref: null } };
+    let autoAssign = config_v2_1.defaultAutoAssign();
     if (ok && cfg && isV2) {
         for (const p of cfg.providers || []) {
-            const parsed = account_manager_1.parseAccountsFromProxy(p, p.id);
             providers.push({
                 id: p.id,
                 name: p.name || p.id,
                 baseUrl: p.base_url || "",
                 apiKeyMasked: account_manager_1.maskApiKey(p.api_key || ""),
-                accountCount: parsed.accounts.length,
             });
         }
         for (const m of cfg.models || []) {
@@ -373,6 +381,20 @@ async function postState(webview, proxyKeyHint) {
             vision: { ref: cfg.aux?.vision?.ref ?? null },
             web_extract: { ref: cfg.aux?.web_extract?.ref ?? null },
         };
+        try {
+            const auto_assign_1 = require("./auto_assign");
+            const parsed = auto_assign_1.parseAutoAssign(cfg);
+            autoAssign = {
+                mode: parsed.mode,
+                rotate_minutes: parsed.rotateMinutes,
+                rotate_every_n_requests: parsed.rotateEveryN,
+                model_ids: parsed.modelIds,
+                current: auto_assign_1.getCurrentAutoAssignTargetId(cfg),
+            };
+        }
+        catch {
+            autoAssign = cfg.auto_assign || autoAssign;
+        }
     }
 
     webview.postMessage({
@@ -386,6 +408,7 @@ async function postState(webview, proxyKeyHint) {
         providers,
         enabledModels,
         aux,
+        autoAssign,
     });
 }
 
@@ -516,9 +539,8 @@ function saveCurrentV2(cfg, modelEntryId, payload) {
         }
     }
     config_v2_1.applyUserParams(model, edits);
-    applyAccountSwitchToProxy(provider, payload);
+    // v2: rotation lives in auto_assign, not on provider
     proxy_config_loader_1.writeConfigFile(cfg);
-    finalizeAccountAfterSave(provider.id, payload);
     return { ok: true, proxyKey: modelEntryId, name: model.name || model.model_id };
 }
 
@@ -850,6 +872,57 @@ async function setAux(payload) {
     return { ok: true, info: "辅助模型已更新" };
 }
 
+async function saveAutoAssign(payload) {
+    const gate = await requireV2();
+    if (!gate.ok) {
+        return gate;
+    }
+    const cfg = gate.cfg;
+    let mode = String(payload.mode || "manual").trim().toLowerCase();
+    if (mode === "rotate_requests" || mode === "requests") {
+        mode = "rotate_requests";
+    }
+    else if (mode === "rotate" || mode === "time" || mode === "auto") {
+        mode = "rotate";
+    }
+    else {
+        mode = "manual";
+    }
+    const modelIds = Array.isArray(payload.modelIds)
+        ? payload.modelIds.map((x) => String(x || "").trim()).filter(Boolean)
+        : [];
+    cfg.auto_assign = {
+        mode,
+        rotate_minutes: Math.max(
+            1,
+            Math.min(1440, Math.floor(Number(payload.rotateMinutes) || 5)),
+        ),
+        rotate_every_n_requests: Math.max(
+            1,
+            Math.min(500, Math.floor(Number(payload.rotateEveryN) || 10)),
+        ),
+        model_ids: modelIds,
+    };
+    proxy_config_loader_1.writeConfigFile(cfg);
+    if (payload.currentId) {
+        try {
+            require("./auto_assign").setCurrentAutoAssignTargetId(
+                String(payload.currentId),
+                "settings",
+            );
+        }
+        catch {
+            /* */
+        }
+    }
+    return {
+        ok: true,
+        info: modelIds.length
+            ? `自动分配已保存（${modelIds.length} 个模型）`
+            : "自动分配池已清空（Copilot 不显示「自动分配」）",
+    };
+}
+
 function getHtml() {
     return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -965,6 +1038,7 @@ function getHtml() {
     <button class="tab active" data-tab="current">当前模型</button>
     <button class="tab" data-tab="providers" id="tabProviders">供应商</button>
     <button class="tab" data-tab="models" id="tabModels">模型</button>
+    <button class="tab" data-tab="auto" id="tabAuto">自动分配</button>
     <button class="tab" data-tab="aux" id="tabAux">辅助模型</button>
   </div>
   <div class="status" id="status"></div>
@@ -1061,6 +1135,38 @@ function getHtml() {
     </div>
   </div>
 
+  <div class="panel" id="panel-auto">
+    <div class="card">
+      <h2>自动分配</h2>
+      <div class="sub">从已启用模型中勾选进入轮换池。Copilot 模型列表会出现「自动分配」；聊天时按下方策略选用池内某一模型（不同供应商 / 不同 API Key 均可混入）。</div>
+      <div class="row">
+        <label>切换方式</label>
+        <select id="autoMode">
+          <option value="manual">手动（固定当前项，可在下方选当前）</option>
+          <option value="rotate">按时间轮换</option>
+          <option value="rotate_requests">按请求次数轮换</option>
+        </select>
+      </div>
+      <div class="row" id="autoMinRow">
+        <label>轮换间隔(分)</label>
+        <input id="autoMinutes" type="number" min="1" max="1440" step="1" value="5" />
+      </div>
+      <div class="row hidden" id="autoReqRow">
+        <label>每 N 次请求</label>
+        <input id="autoEveryN" type="number" min="1" max="500" step="1" value="10" />
+      </div>
+      <div class="row">
+        <label>当前选用</label>
+        <select id="autoCurrent"></select>
+      </div>
+      <h2 style="margin-top:14px">池内模型</h2>
+      <div id="autoPoolList"></div>
+      <div class="actions">
+        <button class="primary" id="btnSaveAuto">保存自动分配</button>
+      </div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-aux">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -1101,7 +1207,7 @@ function getHtml() {
 <script>
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  let state = { isV2: false, enabledModels: [], providers: [], aux: {}, catalog: [] };
+  let state = { isV2: false, enabledModels: [], providers: [], aux: {}, autoAssign: {}, catalog: [] };
   let auxEditKind = 'vision';
 
   function setStatus(text, kind) {
@@ -1119,12 +1225,19 @@ function getHtml() {
     $('rotateMinRow').classList.toggle('hidden', mode !== 'rotate');
     $('rotateReqRow').classList.toggle('hidden', mode !== 'rotate_requests');
   }
+  function syncAutoModeUi() {
+    const mode = $('autoMode').value;
+    $('autoMinRow').classList.toggle('hidden', mode !== 'rotate');
+    $('autoReqRow').classList.toggle('hidden', mode !== 'rotate_requests');
+  }
   function setV2Ui(isV2) {
     $('upgradeBanner').classList.toggle('hidden', isV2);
-    ['tabProviders','tabModels','tabAux'].forEach(id => {
+    ['tabProviders','tabModels','tabAuto','tabAux'].forEach(id => {
       $(id).disabled = !isV2;
       $(id).style.opacity = isV2 ? '1' : '0.45';
     });
+    // v2: no per-provider accounts card
+    if (isV2) $('accountCard').classList.add('hidden');
   }
   function showTab(name) {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
@@ -1146,12 +1259,36 @@ function getHtml() {
     box.innerHTML = list.map(p =>
       '<div class="list-row">' +
         '<div class="list-main"><div class="model-title">' + esc(p.name) + '</div>' +
-        '<div class="mono sub">' + esc(p.baseUrl) + ' · key ' + esc(p.apiKeyMasked) +
-        ' · 账号 ' + esc(p.accountCount) + '</div></div>' +
+        '<div class="mono sub">' + esc(p.baseUrl) + ' · key ' + esc(p.apiKeyMasked) + '</div></div>' +
         '<div class="aux-actions">' +
           '<button class="linkish" data-del-prov="' + esc(p.id) + '">删除</button>' +
         '</div></div>'
     ).join('');
+  }
+  function renderAutoPool() {
+    const aa = state.autoAssign || {};
+    const selected = new Set(aa.model_ids || []);
+    $('autoMode').value = aa.mode || 'manual';
+    $('autoMinutes').value = aa.rotate_minutes != null ? aa.rotate_minutes : 5;
+    $('autoEveryN').value = aa.rotate_every_n_requests != null ? aa.rotate_every_n_requests : 10;
+    syncAutoModeUi();
+    const models = state.enabledModels || [];
+    $('autoPoolList').innerHTML = models.length
+      ? models.map(m =>
+          '<label class="list-row" style="cursor:pointer">' +
+            '<div class="list-main"><div>' + esc(m.name) + '</div>' +
+            '<div class="mono sub">' + esc(m.providerName) + ' · ' + esc(m.modelId) + '</div></div>' +
+            '<input type="checkbox" data-auto-id="' + esc(m.id) + '"' +
+            (selected.has(m.id) ? ' checked' : '') + ' /></label>'
+        ).join('')
+      : '<div class="sub">请先在「模型」页启用至少一个模型。</div>';
+    const poolModels = models.filter(m => selected.has(m.id));
+    $('autoCurrent').innerHTML = poolModels.length
+      ? poolModels.map(m =>
+          '<option value="' + esc(m.id) + '"' +
+          (m.id === aa.current ? ' selected' : '') + '>' + esc(m.name) + '</option>'
+        ).join('')
+      : '<option value="">（池为空）</option>';
   }
   function fillCatalogProviderSelect() {
     const sel = $('catalogProvider');
@@ -1191,6 +1328,7 @@ function getHtml() {
     state.providers = msg.providers || [];
     state.enabledModels = msg.enabledModels || [];
     state.aux = msg.aux || {};
+    state.autoAssign = msg.autoAssign || {};
     $('configPath').textContent = 'schema v' + (msg.schemaVersion || 1) + ' · ' + (msg.configPath || '');
     setV2Ui(state.isV2);
     if (msg.readError) setStatus('读配置失败：' + msg.readError, 'err');
@@ -1203,7 +1341,7 @@ function getHtml() {
     $('modelLimitTip').textContent = form.limitTip || '';
 
     const accounts = form.accounts || [];
-    if (accounts.length > 1) {
+    if (!state.isV2 && accounts.length > 1) {
       $('accountCard').classList.remove('hidden');
       $('account').innerHTML = accounts.map(a =>
         '<option value="' + esc(a.id) + '"' + (a.id === form.accountId ? ' selected' : '') + '>' +
@@ -1213,7 +1351,7 @@ function getHtml() {
       $('rotateMinutes').value = form.rotateMinutes != null ? form.rotateMinutes : 5;
       $('rotateEveryN').value = form.rotateEveryNRequests != null ? form.rotateEveryNRequests : 10;
       syncAccountModeUi();
-    } else {
+    } else if (!state.isV2) {
       $('accountCard').classList.add('hidden');
     }
     $('thinking').value = form.thinking || 'high';
@@ -1223,6 +1361,7 @@ function getHtml() {
 
     renderProviders();
     fillCatalogProviderSelect();
+    renderAutoPool();
     $('auxVisionLabel').textContent = auxLabel(state.aux.vision && state.aux.vision.ref);
     $('auxWebLabel').textContent = auxLabel(state.aux.web_extract && state.aux.web_extract.ref);
     fillAuxPick();
@@ -1235,6 +1374,21 @@ function getHtml() {
     });
   });
   $('accountMode').addEventListener('change', syncAccountModeUi);
+  $('autoMode').addEventListener('change', syncAutoModeUi);
+  $('btnSaveAuto').addEventListener('click', () => {
+    const modelIds = [...document.querySelectorAll('#autoPoolList input[data-auto-id]:checked')]
+      .map(el => el.getAttribute('data-auto-id'));
+    vscode.postMessage({
+      type: 'saveAutoAssign',
+      payload: {
+        mode: $('autoMode').value,
+        rotateMinutes: $('autoMinutes').value,
+        rotateEveryN: $('autoEveryN').value,
+        modelIds,
+        currentId: $('autoCurrent').value || '',
+      }
+    });
+  });
   $('account').addEventListener('change', () => {
     const id = $('account').value || '';
     if (!id || $('account').disabled) return;

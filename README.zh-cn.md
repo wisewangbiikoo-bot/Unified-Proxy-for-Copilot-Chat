@@ -50,19 +50,26 @@
 {
   "schema_version": 2,
   "providers": [
-    { "id": "opencode-go", "name": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1", "api_key": "oc_sk_..." }
+    { "id": "opencode-go-main", "name": "OpenCode Go · 主号", "base_url": "https://opencode.ai/zen/go/v1", "api_key": "oc_sk_main" },
+    { "id": "opencode-go-bak", "name": "OpenCode Go · 副号", "base_url": "https://opencode.ai/zen/go/v1", "api_key": "oc_sk_bak" }
   ],
   "models": [
     {
-      "id": "opencode-go__deepseek-v4.1-flash",
-      "provider_id": "opencode-go",
+      "id": "opencode-go-main__deepseek-v4.1-flash",
+      "provider_id": "opencode-go-main",
       "model_id": "deepseek-v4.1-flash",
       "enabled": true,
-      "name": "DeepSeek V4.1 Flash",
+      "name": "DeepSeek Flash · 主号",
       "params": { "context_window_size": 0, "supports_images": 0 },
       "param_source": "auto"
     }
   ],
+  "auto_assign": {
+    "mode": "rotate_requests",
+    "rotate_minutes": 5,
+    "rotate_every_n_requests": 10,
+    "model_ids": ["opencode-go-main__deepseek-v4.1-flash", "opencode-go-bak__deepseek-v4.1-flash"]
+  },
   "aux": {
     "vision": { "ref": null },
     "web_extract": { "ref": null }
@@ -70,10 +77,12 @@
 }
 ```
 
+- **供应商**只含 `name` / `base_url` / `api_key`；同一官网不同 Key = 多条供应商
 - `models[].id` = `providerId__modelId`（Copilot 模型主键）
+- **`auto_assign`**：从已启用模型勾选进池；Copilot 出现「自动分配」；`mode` 为 manual / rotate / rotate_requests
 - `param_source: user` 时刷新目录不会覆盖已改参数
 - `aux.*.ref` 指向已启用模型 id；`null` = 自动用主模型
-- 旧版仅有 `proxies` 时：设置页可「升级为 2.0」（生成 `.bak-…` 备份）
+- 旧版仅有 `proxies` 时：设置页可「升级为 2.0」（生成 `.bak-…` 备份；多 Key 会拆成多供应商并写入 `auto_assign`）
 
 ### 多账号（`accounts`）
 

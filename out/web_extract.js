@@ -57,16 +57,7 @@ async function maybeSummarizeWebToolResults(messages, proxyConfig, token) {
     if (!target) {
         return messages;
     }
-    const account_manager_1 = require("./account_manager");
-    const resolved = account_manager_1.resolveApiKeyForProxy(
-        target.provider.id,
-        {
-            api_key: target.provider.api_key,
-            accounts: target.provider.accounts,
-            account_switch: target.provider.account_switch,
-        },
-    );
-    const apiKey = resolved.apiKey || target.provider.api_key;
+    const apiKey = String(target.provider.api_key || "").trim();
     if (!apiKey) {
         return messages;
     }

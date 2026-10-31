@@ -14,14 +14,14 @@ This extension is based on **[DeepSeek V4 for Copilot Chat v0.8.2](https://githu
 
 ## What we added
 
-- **Config schema v2** (v2.0.0) — `providers` + enabled `models` + `aux`; UI add provider → Refresh `/models` → toggle models. Legacy v1 `proxies` map still works until you upgrade
+- **Config schema v2** (v2.0+) — providers are `name`+`base_url`+`api_key` only (same host, different keys = multiple rows); enabled `models` + `aux` + **`auto_assign`**. Legacy v1 `proxies` still loads until upgrade
+- **自动分配** (v2.0.1) — pool of enabled models; Copilot picker shows **自动分配**; rotate by time / every-N requests
 - One Copilot model entry per enabled model (v2) or per proxy (v1)
 - Per-model: images on/off (0/1/2), context window, max output, temperature, default thinking level
-- **Auto limits / vision / tools / thinking from `/v1/models`** — omit **or set `0`** to probe upstream; v2 stores auto params on enable (`param_source: auto`); user edits → `user`. Details: [README.zh-cn.md](./README.zh-cn.md)
-- **Auxiliary models** (v2.0.0) — global vision (image describe) + web extract (long page summarize) when the chat model cannot
-- **OpenCode Go usage** (v1.4.0+) — status bar monthly % + Copilot-like hover; account id from `go/status` `subscriberUserId`
-- **Multi-account API keys** (v1.5.0+) — provider-level `accounts` + `account_switch`
-- **Settings webview** — tabs: current model / providers / model discovery / aux
+- **Auto limits from `/v1/models`** — omit/`0` probe; user edits → `param_source: user`
+- **Auxiliary models** — global vision + web extract when the chat model cannot
+- **OpenCode Go usage** — status bar monthly % + hover meters
+- **Settings webview** — current / providers / models / auto-assign / aux
 - **Configurable vision proxy** (v1.1.0): each backend can specify its own vision source — VS Code LM, or an API endpoint (OpenAI Chat, Anthropic Messages, OpenAI Responses)
 - **Per-backend vision proxy** (v1.1.0): `vision_proxy` field in `proxy_configs.json` for per-model vision configuration
 - Tool-schema sanitization for OpenAI-compatible gateways

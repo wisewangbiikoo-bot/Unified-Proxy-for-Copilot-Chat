@@ -2,6 +2,17 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.1] — 2026-10-31
+
+### Changed
+
+* **Provider = one URL + one API key** — only `name` / `base_url` / `api_key` (same
+  vendor with different keys = multiple provider rows). Removed nested `accounts` /
+  `account_switch` on providers.
+* **`auto_assign`** — top-level pool of enabled model ids + rotate mode; Copilot shows
+  virtual model **自动分配**. Migrate expands legacy multi-key proxies into providers
+  and fills `auto_assign.model_ids`.
+
 ## [2.0.0] — 2026-10-31
 
 ### Added

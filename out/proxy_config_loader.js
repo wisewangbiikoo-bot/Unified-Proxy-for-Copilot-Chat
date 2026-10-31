@@ -92,7 +92,10 @@ function readConfigFile() {
         if (!fs.existsSync(configPath)) {
             return { ok: false, error: "missing", path: configPath };
         }
-        const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        let cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if ((0, config_v2_1.isV2Config)(cfg)) {
+            cfg = (0, config_v2_1.normalizeV2Config)(cfg);
+        }
         return { ok: true, cfg, path: configPath };
     }
     catch (e) {
@@ -109,7 +112,17 @@ function writeConfigFile(cfg) {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
+    let doc = cfg;
+    if ((0, config_v2_1.isV2Config)(doc)) {
+        doc = (0, config_v2_1.normalizeV2Config)(JSON.parse(JSON.stringify(doc)));
+    }
+    fs.writeFileSync(configPath, `${JSON.stringify(doc, null, 2)}\n`, "utf-8");
+    try {
+        require("./auto_assign").rescheduleAutoAssignRotator();
+    }
+    catch {
+        /* optional */
+    }
     return configPath;
 }
 
@@ -272,6 +285,16 @@ function loadModelsV2(cfg) {
         proxy._providerId = provider.id;
         models.push(buildModelFromProxy(model.id, proxy));
     }
+    try {
+        const auto_assign_1 = require("./auto_assign");
+        const autoModel = auto_assign_1.buildAutoAssignChatModel(cfg);
+        if (autoModel) {
+            models.unshift(autoModel);
+        }
+    }
+    catch {
+        /* optional */
+    }
     return models;
 }
 
@@ -327,7 +350,19 @@ function getProxyConfig(modelId) {
 }
 
 function getProxyConfigV2(cfg, modelEntryId, accountId) {
-    const model = (0, config_v2_1.findModel)(cfg, modelEntryId);
+    const auto_assign_1 = require("./auto_assign");
+    let resolvedEntryId = modelEntryId;
+    let isAutoAssign = false;
+    if (auto_assign_1.isAutoAssignModelId(modelEntryId)) {
+        const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+        if (!target) {
+            return null;
+        }
+        resolvedEntryId = target;
+        isAutoAssign = true;
+    }
+
+    const model = (0, config_v2_1.findModel)(cfg, resolvedEntryId);
     if (!model?.enabled) {
         return null;
     }
@@ -336,32 +371,28 @@ function getProxyConfigV2(cfg, modelEntryId, accountId) {
         return null;
     }
     const proxy = (0, config_v2_1.modelToProxyShape)(model, provider);
-    const account_manager_1 = require("./account_manager");
-    const lookupKey = provider.id;
-    if (accountId) {
-        account_manager_1.setActiveAccountId(lookupKey, accountId, "model-select");
-    }
-    const options = applyAutoOverrides(modelEntryId, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
-    const resolved = account_manager_1.resolveApiKeyForProxy(lookupKey, proxy);
+    const options = applyAutoOverrides(resolvedEntryId, (0, proxy_config_parse_1.parseProxyEntry)(proxy));
+    const apiKey = String(provider.api_key || "").trim();
 
     // Prefer global aux.vision over per-entry vision_proxy (v2 has none on models)
     let visionProxy = options.visionProxy;
-    const auxVision = (0, config_v2_1.resolveAuxVisionProxy)(cfg, (pid, prov) => {
-        const r = account_manager_1.resolveApiKeyForProxy(pid, prov);
-        return r.apiKey || prov.api_key || "";
-    });
+    const auxVision = (0, config_v2_1.resolveAuxVisionProxy)(cfg, (_pid, prov) =>
+        String(prov?.api_key || ""),
+    );
     if (auxVision) {
         visionProxy = (0, proxy_config_parse_1.parseVisionProxyConfig)({ vision_proxy: auxVision });
     }
 
     return {
         baseUrl: provider.base_url,
-        apiKey: resolved.apiKey || provider.api_key,
-        accountId: resolved.account?.id || accountId || "",
-        accountName: resolved.account?.name || "",
-        proxyKey: modelEntryId,
+        apiKey,
+        accountId: provider.id,
+        accountName: provider.name || provider.id,
+        proxyKey: isAutoAssign ? auto_assign_1.AUTO_ASSIGN_MODEL_ID : resolvedEntryId,
         providerId: provider.id,
         modelId: model.model_id,
+        resolvedModelEntryId: resolvedEntryId,
+        isAutoAssign,
         supportsImages: options.supportsImages,
         supportsImagesFromConfig: options.supportsImagesFromConfig,
         supportsTools: options.supportsTools,

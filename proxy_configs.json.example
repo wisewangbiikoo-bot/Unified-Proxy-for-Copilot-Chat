@@ -2,19 +2,16 @@
   "schema_version": 2,
   "providers": [
     {
-      "id": "opencode-go",
-      "name": "OpenCode Go",
+      "id": "opencode-go-main",
+      "name": "OpenCode Go · 主号",
       "base_url": "https://opencode.ai/zen/go/v1",
-      "api_key": "YOUR_OPENCODE_GO_API_KEY",
-      "accounts": [
-        { "id": "main", "name": "主号", "api_key": "YOUR_OPENCODE_GO_API_KEY" },
-        { "id": "bak", "name": "副号", "api_key": "YOUR_OPENCODE_GO_API_KEY_2" }
-      ],
-      "account_switch": {
-        "mode": "manual",
-        "rotate_minutes": 5,
-        "rotate_every_n_requests": 10
-      }
+      "api_key": "YOUR_OPENCODE_GO_API_KEY"
+    },
+    {
+      "id": "opencode-go-bak",
+      "name": "OpenCode Go · 副号",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "api_key": "YOUR_OPENCODE_GO_API_KEY_2"
     },
     {
       "id": "lan-proxy",
@@ -25,11 +22,11 @@
   ],
   "models": [
     {
-      "id": "opencode-go__deepseek-v4.1-flash",
-      "provider_id": "opencode-go",
+      "id": "opencode-go-main__deepseek-v4.1-flash",
+      "provider_id": "opencode-go-main",
       "model_id": "deepseek-v4.1-flash",
       "enabled": true,
-      "name": "DeepSeek V4.1 Flash",
+      "name": "DeepSeek V4.1 Flash · 主号",
       "params": {
         "context_window_size": 0,
         "max_output_tokens": 0,
@@ -38,6 +35,21 @@
         "supports_thinking": 1,
         "temperature": 0.3,
         "thinking_mode": "标准"
+      },
+      "param_source": "auto"
+    },
+    {
+      "id": "opencode-go-bak__deepseek-v4.1-flash",
+      "provider_id": "opencode-go-bak",
+      "model_id": "deepseek-v4.1-flash",
+      "enabled": true,
+      "name": "DeepSeek V4.1 Flash · 副号",
+      "params": {
+        "context_window_size": 0,
+        "max_output_tokens": 0,
+        "supports_images": 0,
+        "supports_tools": 1,
+        "supports_thinking": 1
       },
       "param_source": "auto"
     },
@@ -57,6 +69,15 @@
       "param_source": "auto"
     }
   ],
+  "auto_assign": {
+    "mode": "rotate_requests",
+    "rotate_minutes": 5,
+    "rotate_every_n_requests": 10,
+    "model_ids": [
+      "opencode-go-main__deepseek-v4.1-flash",
+      "opencode-go-bak__deepseek-v4.1-flash"
+    ]
+  },
   "aux": {
     "vision": { "ref": "lan-proxy__gemini-2.5-flash-lite" },
     "web_extract": { "ref": null }
