@@ -191,12 +191,6 @@ async function handleMessage(msg, opts) {
             info: result.info,
         });
         if (result.ok) {
-            panel.webview.postMessage({
-                type: "modelToggled",
-                providerId: String(msg.payload?.providerId || ""),
-                modelId: String(msg.payload?.modelId || ""),
-                enabled: Boolean(msg.payload?.enabled),
-            });
             onSaved?.();
             await postState(panel.webview, opts.proxyKey);
         }
@@ -820,6 +814,26 @@ async function refreshCatalog(providerId) {
     return { ok: true, providerId: id, items };
 }
 
+async function fetchModelMeta(provider, modelId) {
+    try {
+        const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
+        const headers = upstream_model_limits_1.buildListHeaders(
+            provider.base_url,
+            provider.custom_headers,
+            provider.opencode_session || "",
+        );
+        const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
+            provider.base_url,
+            resolved.apiKey || provider.api_key || "",
+            headers,
+        );
+        return catalog.get(modelId) || null;
+    }
+    catch {
+        return null;
+    }
+}
+
 async function toggleModel(payload) {
     const gate = await requireV2();
     if (!gate.ok) {
@@ -838,26 +852,30 @@ async function toggleModel(payload) {
     }
     const entryId = config_v2_1.makeModelId(providerId, modelId);
     let model = config_v2_1.findModel(cfg, entryId);
+    // Write enabled immediately — do not block UI on upstream /models.
+    const fillMetaLater = (needFill) => {
+        if (!needFill) {
+            return;
+        }
+        void (async () => {
+            const meta = await fetchModelMeta(provider, modelId);
+            if (!meta) {
+                return;
+            }
+            const latest = proxy_config_loader_1.readConfigFile();
+            if (!latest.ok || !latest.cfg) {
+                return;
+            }
+            const m2 = config_v2_1.findModel(latest.cfg, entryId);
+            if (m2 && m2.enabled && m2.param_source !== "user") {
+                m2.params = config_v2_1.paramsFromMeta(meta);
+                m2.param_source = "auto";
+                proxy_config_loader_1.writeConfigFile(latest.cfg);
+                onSaved?.();
+            }
+        })();
+    };
     if (!model && enabled) {
-        // Fetch meta for auto params
-        let meta = null;
-        try {
-            const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
-            const headers = upstream_model_limits_1.buildListHeaders(
-                provider.base_url,
-                provider.custom_headers,
-                provider.opencode_session || "",
-            );
-            const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
-                provider.base_url,
-                resolved.apiKey || provider.api_key || "",
-                headers,
-            );
-            meta = catalog.get(modelId) || null;
-        }
-        catch {
-            meta = null;
-        }
         const displayName = String(payload.name || modelId);
         model = {
             id: entryId,
@@ -865,45 +883,24 @@ async function toggleModel(payload) {
             model_id: modelId,
             enabled: true,
             name: displayName,
-            params: config_v2_1.paramsFromMeta(meta),
+            params: config_v2_1.paramsFromMeta(null),
             param_source: "auto",
         };
         cfg.models.push(model);
+        proxy_config_loader_1.writeConfigFile(cfg);
+        fillMetaLater(true);
+        return { ok: true, info: `已启用 ${model.name || modelId}` };
     }
-    else if (model) {
+    if (model) {
         model.enabled = enabled;
-        if (enabled && model.param_source !== "user") {
-            try {
-                const resolved = account_manager_1.resolveApiKeyForProxy(provider.id, provider);
-                const headers = upstream_model_limits_1.buildListHeaders(
-                    provider.base_url,
-                    provider.custom_headers,
-                    provider.opencode_session || "",
-                );
-                const catalog = await upstream_model_limits_1.fetchUpstreamModelLimits(
-                    provider.base_url,
-                    resolved.apiKey || provider.api_key || "",
-                    headers,
-                );
-                const meta = catalog.get(modelId);
-                if (meta) {
-                    model.params = config_v2_1.paramsFromMeta(meta);
-                    model.param_source = "auto";
-                }
-            }
-            catch {
-                /* keep */
-            }
-        }
+        proxy_config_loader_1.writeConfigFile(cfg);
+        fillMetaLater(enabled && model.param_source !== "user");
+        return {
+            ok: true,
+            info: enabled ? `已启用 ${model.name || modelId}` : `已禁用 ${model.name || modelId}`,
+        };
     }
-    else {
-        return { ok: true, info: "已关闭（未入库）" };
-    }
-    proxy_config_loader_1.writeConfigFile(cfg);
-    return {
-        ok: true,
-        info: enabled ? `已启用 ${model.name || modelId}` : `已禁用 ${model.name || modelId}`,
-    };
+    return { ok: true, info: "已关闭（未入库）" };
 }
 
 async function setAux(payload) {
@@ -1089,19 +1086,32 @@ function getHtml() {
     border: 1px solid var(--vscode-widget-border, #555); border-radius: 999px;
     padding: 0 6px; margin-left: 6px;
   }
+  /* div[role=switch] — avoid <button>:active theme flash (looks like double toggle) */
   .switch {
     width: 40px; height: 22px; border-radius: 999px; border: none; cursor: pointer;
     background: var(--vscode-input-background); position: relative; flex-shrink: 0;
+    padding: 0; margin: 0; display: inline-block; box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent; user-select: none;
+    outline: none; box-shadow: none;
   }
   .switch.sm { width: 34px; height: 18px; }
   .switch.on { background: var(--vscode-testing-iconPassed, #3fb950); }
+  .switch:active, .switch:focus, .switch:focus-visible {
+    background: var(--vscode-input-background);
+    outline: none; box-shadow: none;
+  }
+  .switch.on:active, .switch.on:focus, .switch.on:focus-visible {
+    background: var(--vscode-testing-iconPassed, #3fb950);
+  }
   .switch::after {
     content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
-    border-radius: 50%; background: #fff; transition: left .15s;
+    border-radius: 50%; background: #fff; transition: left .12s;
+    pointer-events: none;
   }
   .switch.sm::after { width: 14px; height: 14px; top: 2px; left: 2px; }
   .switch.on::after { left: 20px; }
   .switch.sm.on::after { left: 18px; }
+  .switch.busy { opacity: 0.65; pointer-events: none; }
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .toolbar input { flex: 1; }
   .banner {
@@ -1303,6 +1313,7 @@ function getHtml() {
   const vscode = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
   let state = { isV2: false, enabledModels: [], providers: [], aux: {}, autoAssign: {}, catalog: [] };
+  const pendingToggles = new Set(); // modelId currently saving — ignore duplicate pointer events
   let auxEditKind = 'vision';
 
   function setStatus(text, kind) {
@@ -1469,8 +1480,11 @@ function getHtml() {
           '<div class="cat-line1"><span class="cat-name">' + esc(it.name) + '</span>' +
           '<span class="cat-limit">' + esc(formatCatalogLimit(it)) + '</span></div>' +
           '<div class="cat-id">' + esc(it.id) + '</div></div>' +
-        '<button type="button" class="switch sm' + (it.enabled ? ' on' : '') + '" data-toggle="' + esc(it.id) +
-        '" data-name="' + esc(it.name) + '" title="' + (it.enabled ? '点击禁用' : '点击启用') + '"></button></div>'
+        '<div role="switch" class="switch sm' + (it.enabled ? ' on' : '') +
+        (pendingToggles.has(it.id) ? ' busy' : '') +
+        '" aria-checked="' + (it.enabled ? 'true' : 'false') +
+        '" tabindex="0" data-toggle="' + esc(it.id) +
+        '" data-name="' + esc(it.name) + '" title="' + (it.enabled ? '点击禁用' : '点击启用') + '"></div></div>'
     ).join('');
   }
   function fillAuxPick() {
@@ -1631,16 +1645,17 @@ function getHtml() {
     vscode.postMessage({ type: 'refreshCatalog', providerId: $('catalogProvider').value });
   });
   $('modelSearch').addEventListener('input', renderCatalog);
-  $('catalogList').addEventListener('click', (ev) => {
-    const btn = ev.target.closest('[data-toggle]');
-    if (!btn) return;
-    ev.preventDefault();
-    ev.stopPropagation();
+  let pointerDownToggle = null;
+  function applyCatalogToggle(btn) {
+    if (!btn || btn.classList.contains('busy')) return;
     const modelId = btn.getAttribute('data-toggle');
+    if (!modelId || pendingToggles.has(modelId)) return;
     const name = btn.getAttribute('data-name') || modelId;
     const enabled = !btn.classList.contains('on');
-    // Optimistic UI — postState will reconcile
+    pendingToggles.add(modelId);
+    btn.classList.add('busy');
     btn.classList.toggle('on', enabled);
+    btn.setAttribute('aria-checked', enabled ? 'true' : 'false');
     btn.title = enabled ? '点击禁用' : '点击启用';
     const hit = (state.catalog || []).find(x => x.id === modelId);
     if (hit) hit.enabled = enabled;
@@ -1654,6 +1669,35 @@ function getHtml() {
         enabled
       }
     });
+  }
+  // pointerdown+pointerup on same switch only (once). No click — avoids :active flash + click double feel.
+  $('catalogList').addEventListener('pointerdown', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    pointerDownToggle = ev.target.closest('[data-toggle]');
+  });
+  $('catalogList').addEventListener('pointerup', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    const btn = ev.target.closest('[data-toggle]');
+    const started = pointerDownToggle;
+    pointerDownToggle = null;
+    if (!btn || btn !== started) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    applyCatalogToggle(btn);
+  });
+  $('catalogList').addEventListener('pointercancel', () => { pointerDownToggle = null; });
+  $('catalogList').addEventListener('keydown', (ev) => {
+    const btn = ev.target.closest && ev.target.closest('[data-toggle]');
+    if (!btn) return;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+    applyCatalogToggle(btn);
+  });
+  $('catalogList').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-toggle]')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
   });
   document.querySelectorAll('[data-aux-clear]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1680,7 +1724,10 @@ function getHtml() {
 
   window.addEventListener('message', (ev) => {
     const msg = ev.data || {};
-    if (msg.type === 'state') applyState(msg);
+    if (msg.type === 'state') {
+      pendingToggles.clear();
+      applyState(msg);
+    }
     if (msg.type === 'saved') setStatus(msg.ok ? '已保存' : ('保存失败：' + (msg.error || '')), msg.ok ? 'ok' : 'err');
     if (msg.type === 'accountSwitched') {
       setStatus(msg.ok ? '账号已切换' : ('切换失败：' + (msg.error || '')), msg.ok ? 'ok' : 'err');
@@ -1689,6 +1736,10 @@ function getHtml() {
       setStatus(msg.ok ? (msg.info || '完成') : (msg.error || '失败'), msg.ok ? 'ok' : 'err');
       if (msg.ok && ($('provEditId').value || '').trim()) {
         clearProvEdit();
+      }
+      if (!msg.ok && pendingToggles.size) {
+        pendingToggles.clear();
+        if ((state.catalog || []).length) renderCatalog();
       }
     }
     if (msg.type === 'catalog') {
@@ -1699,13 +1750,6 @@ function getHtml() {
       state.catalog = msg.items || [];
       renderCatalog();
       setStatus('已刷新 ' + state.catalog.length + ' 个模型', 'ok');
-    }
-    if (msg.type === 'modelToggled') {
-      const hit = (state.catalog || []).find(x => x.id === msg.modelId);
-      if (hit) {
-        hit.enabled = Boolean(msg.enabled);
-        renderCatalog();
-      }
     }
   });
   vscode.postMessage({ type: 'ready' });

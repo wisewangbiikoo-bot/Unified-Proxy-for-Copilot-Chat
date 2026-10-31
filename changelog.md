@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.7] — 2026-10-31
+
+### Fixed
+
+* **Model switch double-fire** — native `<button>:active` theme flash + `click` looked
+  like press+release both toggled; now `div[role=switch]` with a single `pointerup`,
+  pending lock, and non-blocking enable (write first, fill limits in background).
+
 ## [2.0.6] — 2026-10-31
 
 ### Changed
