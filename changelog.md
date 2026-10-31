@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.18] — 2026-10-31
+
+### Changed
+
+* **Quota refresh** — only: (1) silent fetch on reload/activate; (2) every 5 minutes,
+  refresh once if any OpenCode Go API forwards in that window, then reset counter.
+  Removed focus/idle/every-N/statusbar-click refreshes and status-bar spinner/flash.
+
 ## [2.0.17] — 2026-10-31
 
 ### Changed

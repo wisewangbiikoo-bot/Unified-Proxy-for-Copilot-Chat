@@ -1,8 +1,10 @@
 "use strict";
 /**
  * OpenCode Go quota status bar + local token totals.
- * Quota: GET {base}/usage (e.g. https://opencode.ai/zen/go/v1/usage)
- * Local totals: accumulated from chat stream usage (globalState only).
+ * Refresh policy (silent):
+ *   1) reload/activate → fetch once, counter = 0
+ *   2) every 5 min → if any OpenCode Go API forwards in the window, fetch once & reset counter
+ *   No focus / idle / every-N / statusbar-click refreshes.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startUsageMonitor = startUsageMonitor;
@@ -20,7 +22,7 @@ function getLastQuotaSnapshot() {
 
 /** @param {string} [reason] */
 function refreshUsageQuota(reason) {
-    return refreshQuota(reason || "external");
+    return refreshQuota(reason || "external", { silent: true });
 }
 
 const vscode = require("vscode");
@@ -32,10 +34,8 @@ const no_proxy_1 = require("./no_proxy");
 
 const CONFIG_SECTION = "unified-proxy-copilot";
 const LOCAL_USAGE_KEY = "unified-proxy-copilot.localTokenUsage";
-/** 0 = disable time-based poll (preferred; refresh is request-driven). */
-const DEFAULT_POLL_MINUTES = 0;
-/** After a burst of tool/API rounds goes quiet, treat as end of a "big" turn. */
-const IDLE_REFRESH_MS = 1200;
+/** Fixed window: if any OC Go forwards occurred, refresh once at end of window. */
+const QUOTA_WINDOW_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15000;
 
 /** @type {vscode.ExtensionContext|null} */
@@ -43,11 +43,9 @@ let extContext = null;
 /** @type {vscode.StatusBarItem|null} */
 let statusBar = null;
 /** @type {NodeJS.Timeout|null} */
-let pollTimer = null;
-/** @type {NodeJS.Timeout|null} */
-let chatRefreshTimer = null;
-/** API chat completions with usage since last successful quota refresh. */
-let forwardsSinceRefresh = 0;
+let windowTimer = null;
+/** OpenCode Go API forwards counted in the current 5-minute window. */
+let ocForwardsInWindow = 0;
 /** @type {{ at: number, endpoints: Array<{ label: string, baseUrl: string, usage: any, error?: string }> }|null} */
 let lastQuotaSnapshot = null;
 /**
@@ -149,8 +147,7 @@ function setActiveChatModel(proxyKey, baseUrl) {
     else if (!statusBar) {
         logger_1.logger.warn("setActiveChatModel: statusBar is null (monitor not started?)");
     }
-    // Always refresh so percentages update for this account/model
-    void refreshQuota(prev?.proxyKey === key && prev?.isOpenCode ? "oc-again" : "oc-active");
+    // Quota refresh is window-based only (not on every model switch).
 }
 
 function getShowMode() {
@@ -168,28 +165,6 @@ function getShowMode() {
     return "auto";
 }
 
-/** @returns {number} ms, or 0 to disable interval poll */
-function getPollMs() {
-    const n = Number(
-        vscode.workspace.getConfiguration(CONFIG_SECTION).get("usagePollMinutes") ??
-            DEFAULT_POLL_MINUTES,
-    );
-    if (!Number.isFinite(n) || n <= 0) {
-        return 0;
-    }
-    return Math.max(1, Math.min(180, Math.floor(n))) * 60 * 1000;
-}
-
-/** Refresh immediately once this many chat API usage events accumulate. 0 = off. */
-function getRefreshEveryN() {
-    const n = Number(
-        vscode.workspace.getConfiguration(CONFIG_SECTION).get("usageRefreshEveryNRequests") ?? 3,
-    );
-    if (!Number.isFinite(n) || n <= 0) {
-        return 0;
-    }
-    return Math.max(1, Math.min(50, Math.floor(n)));
-}
 
 /**
  * Prefer last OC chat model; else first multi-account OC; else first OC in config.
@@ -678,60 +653,11 @@ function formatTooltip(snapshot) {
     return lines.join("\n");
 }
 
-/** @type {NodeJS.Timeout|null} */
-let statusBarFlashTimer = null;
-
-/** Show HH:mm:ss on the bar briefly so focus-refresh is visible without hover. */
-function flashStatusBarUpdatedAt(atMs) {
-    if (!statusBar) {
-        return;
-    }
-    const t = new Date(atMs || Date.now());
-    const clock = t.toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-    });
-    if (statusBarFlashTimer) {
-        clearTimeout(statusBarFlashTimer);
-        statusBarFlashTimer = null;
-    }
-    statusBar.text = `$(unified-proxy) ${clock}`;
-    try {
-        statusBar.backgroundColor = new vscode.ThemeColor(
-            "statusBarItem.warningBackground",
-        );
-    }
-    catch {
-        /* ThemeColor may be unavailable in tests */
-    }
-    statusBarFlashTimer = setTimeout(() => {
-        statusBarFlashTimer = null;
-        if (!statusBar) {
-            return;
-        }
-        statusBar.backgroundColor = undefined;
-        // Restore compact label (tooltip already set by applyStatusBarIcon)
-        if (String(statusBar.text || "").includes(clock)) {
-            const ep = lastQuotaSnapshot?.endpoints?.[0];
-            statusBar.text = formatStatusBarLabel(
-                ep?.usage,
-                Boolean(ep?.error && !ep?.usage),
-            );
-        }
-    }, 4000);
-}
-
 function applyStatusBarIcon(usage, openCodeAccountLabel, snapshot, hasError) {
     if (!statusBar) {
         return;
     }
-    // Don't clobber an in-progress flash
-    const flashing = Boolean(statusBarFlashTimer);
-    if (!flashing) {
-        statusBar.text = formatStatusBarLabel(usage, hasError);
-    }
+    statusBar.text = formatStatusBarLabel(usage, hasError);
     statusBar.accessibilityInformation = {
         label: formatStatusA11y(usage, openCodeAccountLabel),
     };
@@ -851,7 +777,12 @@ function updateStatusBarVisibility(_hasOpenCode, _hasError) {
     }
 }
 
-async function refreshQuota(reason) {
+/**
+ * @param {string} reason
+ * @param {{ silent?: boolean }} [opts] silent=true: no spinner / flash (default for all auto refreshes)
+ */
+async function refreshQuota(reason, opts = {}) {
+    const silent = opts.silent !== false; // default silent
     // After a non-OpenCode chat → hide. Otherwise show OC quota (startup / OC chat).
     if (lastActiveChat && !lastActiveChat.isOpenCode) {
         lastQuotaSnapshot = { at: Date.now(), endpoints: [] };
@@ -922,36 +853,40 @@ async function refreshQuota(reason) {
         Boolean(primary?.error && !primary?.usage),
     );
     updateStatusBarVisibility(true, Boolean(primary?.error));
-    if (!primary?.error || primary?.usage) {
-        forwardsSinceRefresh = 0;
-    }
+    ocForwardsInWindow = 0;
     logger_1.logger.info(
-        `Usage refresh (${reason}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.openCodeAccountLabel)} oc=${primary?.openCodeAccountId || "?"}`,
+        `Usage refresh (${reason}${silent ? ",silent" : ""}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.openCodeAccountLabel)} oc=${primary?.openCodeAccountId || "?"}`,
     );
     return lastQuotaSnapshot;
 }
 
-function schedulePoll() {
-    if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
+/** Every 5 minutes: refresh once only if OC Go forwards happened in the window. */
+function scheduleQuotaWindow() {
+    if (windowTimer) {
+        clearInterval(windowTimer);
+        windowTimer = null;
     }
     if (getShowMode() === "off") {
         return;
     }
-    const ms = getPollMs();
-    if (ms <= 0) {
-        return;
-    }
-    pollTimer = setInterval(() => {
-        void refreshQuota("poll");
-    }, ms);
+    windowTimer = setInterval(() => {
+        if (ocForwardsInWindow <= 0) {
+            logger_1.logger.info(
+                "Usage window tick: no OpenCode Go forwards — skip refresh",
+            );
+            return;
+        }
+        const n = ocForwardsInWindow;
+        logger_1.logger.info(
+            `Usage window tick: ${n} OpenCode Go forward(s) — silent refresh`,
+        );
+        void refreshQuota(`window-5m(${n})`, { silent: true });
+    }, QUOTA_WINDOW_MS);
 }
 
 /**
  * Called after each upstream chat completion that reported usage (one API forward).
- * - Idle debounce ≈ end of a multi-tool "big" turn → refresh once
- * - Every N usage events → refresh immediately (mid-turn safety)
+ * Only counts OpenCode Go forwards for the 5-minute window; does not refresh here.
  */
 function notifyChatUsage(proxyKey, baseUrl) {
     if (proxyKey) {
@@ -983,28 +918,14 @@ function notifyChatUsage(proxyKey, baseUrl) {
         updateStatusBarVisibility(false, false);
         return;
     }
-    forwardsSinceRefresh += 1;
-    const everyN = getRefreshEveryN();
-    if (everyN > 0 && forwardsSinceRefresh >= everyN) {
-        if (chatRefreshTimer) {
-            clearTimeout(chatRefreshTimer);
-            chatRefreshTimer = null;
-        }
-        void refreshQuota(`every-${everyN}-requests`);
-        return;
+    // Count only when active chat is OpenCode Go (setActiveChatModel just updated this)
+    if (lastActiveChat?.isOpenCode) {
+        ocForwardsInWindow += 1;
     }
-    if (chatRefreshTimer) {
-        clearTimeout(chatRefreshTimer);
-    }
-    // Quiet period after last API ≈ end of agent turn / "大对话"
-    chatRefreshTimer = setTimeout(() => {
-        chatRefreshTimer = null;
-        void refreshQuota("after-conversation-idle");
-    }, IDLE_REFRESH_MS);
 }
 
 async function showUsageDetail() {
-    await refreshQuota("show-command");
+    // Use last snapshot only — no forced refresh (policy: reload + 5m window only)
     const local = getLocalTokenUsage();
     const lines = [];
     lines.push("=== OpenCode Go quota ===");
@@ -1071,100 +992,6 @@ async function showUsageDetail() {
 }
 
 /**
- * - focused false→true: Alt-Tab back into VS Code
- * - active false→true while focused: idle then mouse move (approx. re-hover)
- * Stable API has no real status-bar hover event; `active` idle edge is the fallback.
- */
-let lastWindowFocused = true;
-let lastWindowActive = true;
-/** @type {NodeJS.Timeout|null} */
-let focusWatchTimer = null;
-let focusRefreshInFlight = false;
-let lastFocusRefreshAt = 0;
-const FOCUS_REFRESH_COOLDOWN_MS = 2000;
-
-/**
- * @param {string} reason
- * @param {{ flash?: boolean }} [opts]
- */
-function refreshOnInteraction(reason, opts = {}) {
-    if (getShowMode() === "off") {
-        return Promise.resolve(null);
-    }
-    const now = Date.now();
-    if (focusRefreshInFlight || now - lastFocusRefreshAt < FOCUS_REFRESH_COOLDOWN_MS) {
-        logger_1.logger.info(
-            `Interaction refresh skipped (inFlight=${focusRefreshInFlight} cooldown) reason=${reason}`,
-        );
-        return Promise.resolve(lastQuotaSnapshot);
-    }
-    focusRefreshInFlight = true;
-    lastFocusRefreshAt = now;
-    logger_1.logger.info(`Interaction → refresh usage (${reason})`);
-    if (statusBar && opts.flash !== false) {
-        statusBar.text = "$(sync~spin)";
-        statusBar.tooltip = "正在刷新 OpenCode Go 用量…";
-    }
-    return refreshQuota(reason)
-        .then((snap) => {
-            if (opts.flash !== false) {
-                flashStatusBarUpdatedAt(snap?.at || Date.now());
-            }
-            return snap;
-        })
-        .catch((e) => {
-            logger_1.logger.warn(`Interaction refresh failed: ${e?.message || e}`);
-            if (statusBar) {
-                statusBar.backgroundColor = undefined;
-                const ep = lastQuotaSnapshot?.endpoints?.[0];
-                statusBar.text = formatStatusBarLabel(ep?.usage, Boolean(ep?.error && !ep?.usage));
-            }
-            return null;
-        })
-        .finally(() => {
-            focusRefreshInFlight = false;
-        });
-}
-
-function startFocusEdgeWatcher(context) {
-    const st = vscode.window.state || {};
-    lastWindowFocused = Boolean(st.focused);
-    lastWindowActive = st.active === undefined ? lastWindowFocused : Boolean(st.active);
-    logger_1.logger.info(
-        `Focus watcher start focused=${lastWindowFocused} active=${lastWindowActive}`,
-    );
-    focusWatchTimer = setInterval(() => {
-        const cur = vscode.window.state || {};
-        const focused = Boolean(cur.focused);
-        const active = cur.active === undefined ? focused : Boolean(cur.active);
-        if (focused && !lastWindowFocused) {
-            void refreshOnInteraction("focus-edge");
-        }
-        else if (focused && active && !lastWindowActive) {
-            // Idle → mouse/keyboard again while still in the window (re-hover approx.)
-            void refreshOnInteraction("active-resume");
-        }
-        if (!focused) {
-            // Ensure next focus/activity is a rising edge
-            lastWindowFocused = false;
-            lastWindowActive = false;
-        }
-        else {
-            lastWindowFocused = true;
-            lastWindowActive = active;
-        }
-    }, 400);
-    context.subscriptions.push({
-        dispose: () => {
-            if (focusWatchTimer) {
-                clearInterval(focusWatchTimer);
-                focusWatchTimer = null;
-            }
-        },
-    });
-}
-
-/**
  * @param {vscode.ExtensionContext} context
  */
 function startUsageMonitor(context) {
@@ -1180,14 +1007,12 @@ function startUsageMonitor(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand("unified-proxy-copilot.showUsage", () => showUsageDetail()),
         vscode.commands.registerCommand("unified-proxy-copilot.refreshUsage", async () => {
-            await refreshQuota("manual");
-            void vscode.window.showInformationMessage("Unified Proxy: usage refreshed");
+            // Kept for manual debug; still silent (no spinner).
+            await refreshQuota("manual", { silent: true });
         }),
         vscode.commands.registerCommand(
             "unified-proxy-copilot.openSettingsFromStatusBar",
             async () => {
-                // Click always refreshes before opening settings
-                await refreshQuota("statusbar-click");
                 const settings_panel_1 = require("./settings_panel");
                 settings_panel_1.openSettingsPanel(extContext, {
                     proxyKey: lastActiveChat?.proxyKey,
@@ -1204,71 +1029,45 @@ function startUsageMonitor(context) {
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
-            if (
-                e.affectsConfiguration(`${CONFIG_SECTION}.showUsageStatusBar`) ||
-                e.affectsConfiguration(`${CONFIG_SECTION}.usagePollMinutes`) ||
-                e.affectsConfiguration(`${CONFIG_SECTION}.usageRefreshEveryNRequests`)
-            ) {
-                schedulePoll();
-                void refreshQuota("config-change");
-            }
-        }),
-        vscode.window.onDidChangeWindowState((state) => {
-            const focused = Boolean(state.focused);
-            const active =
-                state.active === undefined ? focused : Boolean(state.active);
-            logger_1.logger.info(
-                `onDidChangeWindowState focused=${focused} active=${active} prevF=${lastWindowFocused} prevA=${lastWindowActive}`,
-            );
-            if (focused && !lastWindowFocused) {
-                void refreshOnInteraction("focus-event");
-            }
-            else if (focused && active && !lastWindowActive) {
-                void refreshOnInteraction("active-event");
-            }
-            if (!focused) {
-                lastWindowFocused = false;
-                lastWindowActive = false;
-            }
-            else {
-                lastWindowFocused = true;
-                lastWindowActive = active;
+            if (e.affectsConfiguration(`${CONFIG_SECTION}.showUsageStatusBar`)) {
+                scheduleQuotaWindow();
+                updateStatusBarVisibility(
+                    getShowMode() === "always" ||
+                        (getShowMode() === "auto" && Boolean(lastActiveChat?.isOpenCode)),
+                    false,
+                );
             }
         }),
     );
 
-    startFocusEdgeWatcher(context);
-
     context.subscriptions.push({
         dispose: () => {
-            if (pollTimer) {
-                clearInterval(pollTimer);
-                pollTimer = null;
-            }
-            if (chatRefreshTimer) {
-                clearTimeout(chatRefreshTimer);
-                chatRefreshTimer = null;
+            if (windowTimer) {
+                clearInterval(windowTimer);
+                windowTimer = null;
             }
         },
     });
 
-    schedulePoll();
+    scheduleQuotaWindow();
     context.subscriptions.push({
         dispose: () => clearHideAfterIdleTimer(),
     });
 
-    // Show + fetch as soon as OC endpoints exist in proxy_configs (Agent may never hit LM provider).
-    void refreshQuota("activate").then(() => {
+    // Reload/activate: one silent fetch, counter cleared inside refreshQuota.
+    ocForwardsInWindow = 0;
+    void refreshQuota("activate", { silent: true }).then(() => {
         logger_1.logger.info(
-            `Usage monitor ready; statusBar=${statusBar ? "ok" : "null"} mode=${getShowMode()}`,
+            `Usage monitor ready; statusBar=${statusBar ? "ok" : "null"} mode=${getShowMode()} window=5m`,
         );
     });
 
     return {
-        refresh: () => refreshQuota("external"),
+        refresh: () => refreshQuota("external", { silent: true }),
         onConfigReloaded: () => {
-            schedulePoll();
-            void refreshQuota("reload-config");
+            ocForwardsInWindow = 0;
+            scheduleQuotaWindow();
+            void refreshQuota("reload-config", { silent: true });
         },
     };
 }

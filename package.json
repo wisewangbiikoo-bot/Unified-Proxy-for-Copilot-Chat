@@ -3,7 +3,7 @@
 	"displayName": "Unified Proxy for Copilot Chat",
 	"description": "Route Copilot Chat via providers + model discovery (schema v2) or legacy proxy_configs.json. OpenCode Go usage bar, multi-account, aux vision/web-extract.",
 	"icon": "resources/icon.png",
-	"version": "2.0.17",
+	"version": "2.0.18",
 	"publisher": "biikoo",
 	"license": "MIT",
 	"repository": {
@@ -225,17 +225,17 @@
 				},
 				"unified-proxy-copilot.usageRefreshEveryNRequests": {
 					"type": "number",
-					"default": 3,
+					"default": 0,
 					"minimum": 0,
 					"maximum": 50,
-					"markdownDescription": "Refresh OpenCode Go quota after this many chat API `usage` events. **0 = off** (idle ~1.2s refresh still runs). Default 3."
+					"markdownDescription": "**Unused (v2.0.18+).** Quota refresh is: once on reload, then every 5 minutes only if OpenCode Go API forwards occurred in that window."
 				},
 				"unified-proxy-copilot.usagePollMinutes": {
 					"type": "number",
-					"default": 0,
+					"default": 5,
 					"minimum": 0,
 					"maximum": 180,
-					"markdownDescription": "Optional backup time-based poll (minutes). **0 = off** (recommended). Primary refresh is request-driven: after conversation idle, or every `usageRefreshEveryNRequests` API usages."
+					"markdownDescription": "**Unused (v2.0.18+).** Window is fixed at **5 minutes** (refresh only when OpenCode Go forwards were counted in the window)."
 				}
 			}
 		}
