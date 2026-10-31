@@ -657,17 +657,28 @@ function applyStatusBarIcon(usage, openCodeAccountLabel, snapshot, hasError) {
     if (!statusBar) {
         return;
     }
-    statusBar.text = formatStatusBarLabel(usage, hasError);
+    const nextLabel = formatStatusBarLabel(usage, hasError);
+    const prevLabel = String(statusBar.text || "");
+    const labelChanged = prevLabel !== nextLabel;
+    // Silent fetch: no spinner. Only rewrite bar text when monthly% (or error) changed.
+    if (labelChanged) {
+        statusBar.text = nextLabel;
+        logger_1.logger.info(
+            `Status bar label ${prevLabel || "(empty)"} → ${nextLabel}`,
+        );
+    }
     statusBar.accessibilityInformation = {
         label: formatStatusA11y(usage, openCodeAccountLabel),
     };
-    // New MarkdownString each time; hide/show so next hover is not a stale bubble
     const tip = snapshot
         ? buildHoverMarkdown(snapshot)
-        : "Unified Proxy — 悬停看详情；窗口切回时自动刷新；点击打开设置";
-    statusBar.hide();
+        : "Unified Proxy — OpenCode Go 月额度；点击打开设置";
     statusBar.tooltip = tip;
-    statusBar.show();
+    // hide/show only when visible text changes (refresh hover bubble without flicker otherwise)
+    if (labelChanged) {
+        statusBar.hide();
+        statusBar.show();
+    }
 }
 
 function todayKey() {

@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.19] — 2026-10-31
+
+### Changed
+
+* **Status bar after silent quota fetch** — update monthly `%` text only when it
+  actually changes (no spinner; no flicker when unchanged).
+
 ## [2.0.18] — 2026-10-31
 
 ### Changed
