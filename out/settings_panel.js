@@ -282,6 +282,12 @@ async function handleMessage(msg, opts) {
         }
         settingsModelOverride = null; // follow auto-assign again
         opts.proxyKey = id;
+        try {
+            require("./usage_monitor").syncActiveToAutoAssign({ refresh: true });
+        }
+        catch {
+            /* optional */
+        }
         panel.webview.postMessage({
             type: "toast",
             ok: true,
@@ -340,6 +346,12 @@ async function handleMessage(msg, opts) {
             settingsModelOverride = null;
             if (cur) {
                 opts.proxyKey = cur;
+            }
+            try {
+                require("./usage_monitor").syncActiveToAutoAssign({ refresh: true });
+            }
+            catch {
+                /* optional */
             }
             await postState(panel.webview, cur || opts.proxyKey);
         }

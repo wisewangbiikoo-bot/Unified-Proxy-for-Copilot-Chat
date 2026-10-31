@@ -15,6 +15,7 @@ exports.setActiveChatModel = setActiveChatModel;
 exports.getLastActiveChat = getLastActiveChat;
 exports.getLastQuotaSnapshot = getLastQuotaSnapshot;
 exports.refreshUsageQuota = refreshUsageQuota;
+exports.syncActiveToAutoAssign = syncActiveToAutoAssign;
 
 function getLastQuotaSnapshot() {
     return lastQuotaSnapshot;
@@ -23,6 +24,40 @@ function getLastQuotaSnapshot() {
 /** @param {string} [reason] */
 function refreshUsageQuota(reason) {
     return refreshQuota(reason || "external", { silent: true });
+}
+
+/**
+ * Mark last-active as virtual「自动分配」so quota follows getCurrentAutoAssignTargetId
+ * (e.g. gmail), then optionally silent-refresh the status bar %.
+ * @param {{ refresh?: boolean }} [opts]
+ */
+function syncActiveToAutoAssign(opts = {}) {
+    try {
+        const auto_assign_1 = require("./auto_assign");
+        const { ok, cfg } = proxy_config_loader_1.readConfigFile();
+        if (!ok || !cfg) {
+            return;
+        }
+        const targetId = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+        if (!targetId) {
+            return;
+        }
+        const config_v2_1 = require("./config_v2");
+        const model = config_v2_1.findModel(cfg, targetId);
+        const provider = model
+            ? config_v2_1.findProvider(cfg, model.provider_id)
+            : null;
+        setActiveChatModel(
+            auto_assign_1.AUTO_ASSIGN_MODEL_ID,
+            provider?.base_url || "",
+        );
+        if (opts.refresh !== false) {
+            void refreshQuota("auto-assign-current", { silent: true });
+        }
+    }
+    catch (e) {
+        logger_1.logger.warn(`syncActiveToAutoAssign failed: ${e?.message || e}`);
+    }
 }
 
 const vscode = require("vscode");
@@ -167,12 +202,43 @@ function getShowMode() {
 
 
 /**
- * Prefer last OC chat model; else first multi-account OC; else first OC in config.
- * (Cursor Agent may never call our LM provider — still need a quota target.)
- * @returns {{ key: string, proxy: object }|null}
+ * Which model entry drives quota account selection.
+ * Auto-assign → current pool target (e.g. flash-gmail), not the virtual id / first provider.
+ * @returns {string|null}
+ */
+function resolveUsageModelEntryId(cfg) {
+    const auto_assign_1 = require("./auto_assign");
+    const config_v2_1 = require("./config_v2");
+    let key = "";
+    if (lastActiveChat?.proxyKey) {
+        try {
+            key =
+                proxy_config_loader_1.parseModelRef(lastActiveChat.proxyKey).proxyKey ||
+                lastActiveChat.proxyKey;
+        }
+        catch {
+            key = lastActiveChat.proxyKey;
+        }
+    }
+    if (auto_assign_1.isAutoAssignModelId(key)) {
+        return auto_assign_1.getCurrentAutoAssignTargetId(cfg) || null;
+    }
+    if (key && config_v2_1.findModel?.(cfg, key)) {
+        return key;
+    }
+    // No chat yet: if auto-assign pool exists, follow its「当前选用」
+    const autoTarget = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+    if (autoTarget) {
+        return autoTarget;
+    }
+    return key || null;
+}
+
+/**
+ * Prefer provider of the active / auto-assign model; else first OpenCode Go provider.
+ * @returns {{ key: string, proxy: object, modelEntryId?: string }|null}
  */
 function pickUsageProxyTarget(cfg) {
-    const account_manager_1 = require("./account_manager");
     const config_v2_1 = require("./config_v2");
     const entries = (0, config_v2_1.listProviderEntries)(cfg).filter(([, proxy]) =>
         (0, opencode_headers_1.isOpenCodeGoEndpoint)(proxy?.base_url),
@@ -180,30 +246,38 @@ function pickUsageProxyTarget(cfg) {
     if (!entries.length) {
         return null;
     }
-    if (lastActiveChat?.isOpenCode && lastActiveChat.proxyKey) {
-        const rawId = lastActiveChat.proxyKey;
-        let key = rawId;
-        try {
-            key = proxy_config_loader_1.parseModelRef(rawId).proxyKey || rawId;
-        }
-        catch {
-            key = rawId;
-        }
-        const lookup = proxy_config_loader_1.getAccountLookupKey
-            ? proxy_config_loader_1.getAccountLookupKey(key, cfg)
-            : key;
-        let hit = entries.find(([k]) => k === lookup || k === key);
-        if (!hit) {
-            hit = entries.find(([k, p]) => k === rawId || p?.name === rawId || p?.name === key);
-        }
-        if (hit) {
-            return { key: hit[0], proxy: hit[1] };
+    const modelEntryId = resolveUsageModelEntryId(cfg);
+    if (modelEntryId && config_v2_1.isV2Config?.(cfg)) {
+        const model = config_v2_1.findModel(cfg, modelEntryId);
+        const provider = model
+            ? config_v2_1.findProvider(cfg, model.provider_id)
+            : null;
+        if (provider?.base_url && (0, opencode_headers_1.isOpenCodeGoEndpoint)(provider.base_url)) {
+            const hit = entries.find(([k]) => k === provider.id);
+            if (hit) {
+                return { key: hit[0], proxy: hit[1], modelEntryId };
+            }
+            return {
+                key: provider.id,
+                proxy: {
+                    name: provider.name || provider.id,
+                    base_url: provider.base_url,
+                    api_key: provider.api_key,
+                    custom_headers: provider.custom_headers || provider.customHeaders,
+                    opencode_session: provider.opencode_session || "",
+                },
+                modelEntryId,
+            };
         }
     }
-    for (const [key, proxy] of entries) {
-        const { accounts } = account_manager_1.parseAccountsFromProxy(proxy, key);
-        if (accounts.length > 1) {
-            return { key, proxy };
+    // Legacy / fallback: lookup key as provider id
+    if (modelEntryId) {
+        const lookup = proxy_config_loader_1.getAccountLookupKey
+            ? proxy_config_loader_1.getAccountLookupKey(modelEntryId, cfg)
+            : modelEntryId;
+        const hit = entries.find(([k]) => k === lookup || k === modelEntryId);
+        if (hit) {
+            return { key: hit[0], proxy: hit[1], modelEntryId };
         }
     }
     return { key: entries[0][0], proxy: entries[0][1] };

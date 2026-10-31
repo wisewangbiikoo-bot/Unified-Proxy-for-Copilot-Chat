@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.20] — 2026-10-31
+
+### Fixed
+
+* **Quota account vs 自动分配** — status bar usage follows auto-assign「当前选用」
+  provider (e.g. gmail), not the first OpenCode provider (163). Switching current
+  silently refreshes that account’s monthly %.
+
 ## [2.0.19] — 2026-10-31
 
 ### Changed
