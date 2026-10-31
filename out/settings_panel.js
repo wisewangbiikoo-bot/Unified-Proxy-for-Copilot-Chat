@@ -1312,7 +1312,7 @@ function getHtml() {
   h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 8px; }
   h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; }
   .sub { color: var(--vscode-descriptionForeground); font-size: 0.88em; margin: 0 0 10px; }
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .tab {
     border: 1px solid var(--vscode-widget-border, #555);
     background: transparent; color: inherit; border-radius: 6px;
@@ -1362,11 +1362,11 @@ function getHtml() {
     background: transparent; color: var(--vscode-textLink-foreground);
     border: none; padding: 2px 6px;
   }
-  .status { margin-top: 8px; min-height: 1.2em; color: var(--vscode-descriptionForeground); }
+  .status { margin: 0 0 6px; min-height: 0; color: var(--vscode-descriptionForeground); }
   .status.err { color: var(--vscode-errorForeground); }
   .status.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
-  #catalogStatus { margin: 0 0 10px; }
-  #catalogStatus:empty { display: none; min-height: 0; margin: 0; }
+  #status:empty, #catalogStatus:empty { display: none; margin: 0; padding: 0; }
+  #catalogStatus { margin: 0 0 8px; }
   .hidden { display: none !important; }
   .model-title { font-weight: 600; }
   .list-row {

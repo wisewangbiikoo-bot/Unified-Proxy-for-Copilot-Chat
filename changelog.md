@@ -2,6 +2,12 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.30] — 2026-10-31
+
+### Fixed
+
+* **标签下空白** — 全局 `#status` 为空时隐藏，收紧 tabs 与内容间距（目录信息已迁到「模型」页）。
+
 ## [2.0.29] — 2026-10-31
 
 ### Changed
