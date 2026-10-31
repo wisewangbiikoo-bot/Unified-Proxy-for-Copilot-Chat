@@ -1468,35 +1468,33 @@ function getHtml() {
   }
   .aux-actions { display: flex; gap: 8px; flex-shrink: 0; }
   #modelLimitTip { margin-top: 10px; }
-  .tip-h { font-weight: 600; margin: 10px 0 6px; }
+  .tip-h { font-weight: 600; margin: 10px 0 6px; font-size: 1em; }
   .tip-h:first-child { margin-top: 0; }
-  .tip-mono {
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 0.88em; opacity: 0.9; line-height: 1.45;
+  .tip-limit { margin: 0; line-height: 1.55; font-size: 1em; }
+  .tip-limit-row { display: flex; gap: 10px; align-items: baseline; }
+  .tip-limit-k {
+    min-width: 3.2em; color: var(--vscode-descriptionForeground);
   }
-  .tip-muted { opacity: 0.7; font-size: 0.9em; }
-  .tip-usage { margin-top: 12px; }
-  .tip-acct { margin-bottom: 10px; }
+  .tip-limit-v { font-variant-numeric: tabular-nums; }
+  .tip-muted { opacity: 0.7; font-size: 0.95em; }
+  .tip-usage { margin-top: 12px; max-width: 280px; }
+  .tip-acct { margin-bottom: 10px; font-size: 1em; }
   .tip-acct code {
     font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 0.92em;
+    font-size: 0.95em;
   }
-  .tip-meter-block { margin-bottom: 12px; }
-  .tip-meter-title { font-weight: 600; margin-bottom: 4px; }
+  .tip-meter-block { margin-bottom: 12px; max-width: 260px; }
+  .tip-meter-title { font-weight: 600; margin-bottom: 4px; font-size: 1em; }
   .tip-meter {
-    height: 8px; border-radius: 4px; overflow: hidden;
-    background: var(--vscode-disabledForeground, #666);
-    opacity: 0.35;
-    position: relative;
+    height: 8px; border-radius: 4px; overflow: hidden; max-width: 220px;
+    background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
   }
   .tip-meter-fill {
     height: 100%; border-radius: 4px;
     background: var(--vscode-foreground);
-    opacity: 1;
   }
-  .tip-meter { background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent); opacity: 1; }
   .tip-reset {
-    margin-top: 4px; font-size: 0.85em;
+    margin-top: 4px; font-size: 0.9em;
     color: var(--vscode-descriptionForeground);
   }
 </style>
