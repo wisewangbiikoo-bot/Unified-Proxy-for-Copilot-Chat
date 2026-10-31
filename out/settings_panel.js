@@ -455,7 +455,12 @@ function formatLimitTipReset(raw) {
     return `在 ${hm} 重置 ${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-async function buildModelLimitTip(proxyKey, proxy) {
+/**
+ * @param {string} proxyKey
+ * @param {object|null} proxy
+ * @param {{ providerName?: string }} [opts]
+ */
+async function buildModelLimitTip(proxyKey, proxy, opts = {}) {
     const lines = [];
     if (!proxy?.base_url || !proxy?.model_id) {
         lines.push("上游 limit：缺少 base_url / api_key / model_id");
@@ -502,32 +507,43 @@ async function buildModelLimitTip(proxyKey, proxy) {
         lines.push(`上游 limit：查询失败（${e?.message || e}）`);
     }
     try {
-        const usage_monitor_1 = require("./usage_monitor");
-        const snap = usage_monitor_1.getLastQuotaSnapshot?.();
-        const ep = snap?.endpoints?.[0];
-        if (ep?.usage) {
+        const opencode_headers_1 = require("./opencode_headers");
+        if ((0, opencode_headers_1.isOpenCodeGoEndpoint)(proxy.base_url)) {
+            const usage_monitor_1 = require("./usage_monitor");
+            const account_manager_1b = require("./account_manager");
+            const lookup2 = proxy_config_loader_1.getAccountLookupKey(proxyKey);
+            const resolved2 = account_manager_1b.resolveApiKeyForProxy(lookup2, proxy);
+            // Supplier name (OpenCode Go · gmail), never OC acc_/user_ id
+            const providerName =
+                String(opts.providerName || "").trim() ||
+                String(proxy.name || "").trim() ||
+                lookup2;
+            const tip = await usage_monitor_1.fetchOpenCodeUsageForKey({
+                apiKey: resolved2.apiKey || proxy.api_key || "",
+                baseUrl: proxy.base_url,
+                label: providerName,
+            });
             lines.push("OpenCode Go 用量");
-            const acct = ep.openCodeAccountLabel || ep.openCodeAccountId || "";
-            if (acct) {
-                lines.push(`  账号: ${acct}`);
-            }
-            for (const [key, label] of [
-                ["monthly", "月"],
-                ["weekly", "周"],
-                ["rolling", "5h"],
-            ]) {
-                const win = ep.usage[key];
-                if (!win) {
-                    continue;
+            lines.push(`  账号: ${providerName}`);
+            if (tip.usage) {
+                for (const [key, label] of [
+                    ["monthly", "月"],
+                    ["weekly", "周"],
+                    ["rolling", "5h"],
+                ]) {
+                    const win = tip.usage[key];
+                    if (!win) {
+                        continue;
+                    }
+                    const p = Number(win.percent);
+                    const pct = Number.isFinite(p) ? `${p}%` : "?%";
+                    const reset = win.resetsAt ? ` · ${formatLimitTipReset(win.resetsAt)}` : "";
+                    lines.push(`  ${label}: ${pct} 已使用${reset}`);
                 }
-                const p = Number(win.percent);
-                const pct = Number.isFinite(p) ? `${p}%` : "?%";
-                const reset = win.resetsAt ? ` · ${formatLimitTipReset(win.resetsAt)}` : "";
-                lines.push(`  ${label}: ${pct} 已使用${reset}`);
             }
-        }
-        else if (ep?.error) {
-            lines.push(`OpenCode Go 用量：${ep.error}`);
+            else if (tip.error) {
+                lines.push(`  拉取失败：${tip.error}`);
+            }
         }
     }
     catch {
@@ -671,17 +687,20 @@ async function buildCurrentForm(cfg, modelEntryId) {
         }
     }
 
+    let providerName = "";
     if (isV2) {
         const model = config_v2_1.findModel(cfg, proxyKey);
         const provider = model ? config_v2_1.findProvider(cfg, model.provider_id) : null;
         if (model && provider) {
             proxy = config_v2_1.modelToProxyShape(model, provider);
             lookupKey = provider.id;
+            providerName = String(provider.name || provider.id || "").trim();
         }
     }
     else {
         proxy = cfg.proxies?.[proxyKey] || null;
         lookupKey = proxyKey;
+        providerName = String(proxy?.name || proxyKey || "").trim();
     }
 
     const parsed = account_manager_1.parseAccountsFromProxy(proxy || {}, lookupKey);
@@ -690,7 +709,7 @@ async function buildCurrentForm(cfg, modelEntryId) {
     const contextRaw = proxy?.context_window_size ?? "";
     const tempRaw = proxy?.temperature;
     const maxOut = proxy?.max_output_tokens ?? "";
-    const limitTip = await buildModelLimitTip(proxyKey, proxy);
+    const limitTip = await buildModelLimitTip(proxyKey, proxy, { providerName });
     const displayName = proxy?.name
         ? viaAutoAssign
             ? `自动分配 → ${proxy.name}`

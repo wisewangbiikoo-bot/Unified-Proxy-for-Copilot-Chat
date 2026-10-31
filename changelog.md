@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.22] — 2026-10-31
+
+### Fixed
+
+* **Settings「当前模型」用量账号** — show provider name + fetch that provider’s key
+  usage (not global snapshot / `acc_…` id).
+
 ## [2.0.21] — 2026-10-31
 
 ### Fixed

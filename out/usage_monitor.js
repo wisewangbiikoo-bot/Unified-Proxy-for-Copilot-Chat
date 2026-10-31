@@ -16,6 +16,7 @@ exports.getLastActiveChat = getLastActiveChat;
 exports.getLastQuotaSnapshot = getLastQuotaSnapshot;
 exports.refreshUsageQuota = refreshUsageQuota;
 exports.syncActiveToAutoAssign = syncActiveToAutoAssign;
+exports.fetchOpenCodeUsageForKey = fetchOpenCodeUsageForKey;
 
 function getLastQuotaSnapshot() {
     return lastQuotaSnapshot;
@@ -469,6 +470,37 @@ async function fetchGoAccountIdentity(apiKey, opts = {}) {
     finally {
         clearTimeout(timer);
     }
+}
+
+/**
+ * Settings「当前模型」tip: usage for a specific provider key (not global snapshot).
+ * @param {{ apiKey: string, baseUrl?: string, label?: string }} opts
+ * @returns {Promise<{ label: string, usage?: object, error?: string }>}
+ */
+async function fetchOpenCodeUsageForKey(opts) {
+    const apiKey = String(opts?.apiKey || "").trim();
+    const label = String(opts?.label || "").trim();
+    if (!apiKey) {
+        return { label, error: "缺少 API Key" };
+    }
+    const idn = await fetchGoAccountIdentity(apiKey, { bypassCache: true });
+    let usage = idn.usage || null;
+    let error = idn.error || "";
+    if (!usage && opts?.baseUrl) {
+        const r = await fetchGoUsage({
+            baseUrl: String(opts.baseUrl).replace(/\/$/, ""),
+            apiKey,
+            openCodeSession: "",
+            customHeaders: null,
+        });
+        usage = r.usage || null;
+        error = r.error || error;
+    }
+    return {
+        label: label || idn.shortLabel || "",
+        usage: usage || undefined,
+        error: usage ? "" : error,
+    };
 }
 
 /**
