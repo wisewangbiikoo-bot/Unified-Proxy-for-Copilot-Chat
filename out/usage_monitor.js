@@ -1,10 +1,10 @@
 "use strict";
 /**
  * OpenCode Go quota status bar + local token totals.
- * Refresh policy (silent):
- *   1) reload/activate → fetch once, counter = 0
- *   2) every 5 min → if any OpenCode Go API forwards in the window, fetch once & reset counter
- *   3) open settings → if counter > 0, fetch once & reset counter
+ * Refresh policy (silent), counters are per OC account (providerId::accountId):
+ *   1) reload/activate → fetch once, clear all counters
+ *   2) every 5 min → if *current* account counter > 0, fetch once & clear that account
+ *   3) open settings → if *current* account counter > 0, fetch once & clear that account
  *   No focus / idle / every-N refreshes.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -30,19 +30,22 @@ function refreshUsageQuota(reason) {
 }
 
 /**
- * Opening settings: if OC Go forwards happened since last refresh, silent-refresh now.
+ * Opening settings: if *current* OC account had forwards, silent-refresh now.
  * @returns {Promise<object|null>}
  */
 function maybeRefreshOnOpenSettings() {
-    if (ocForwardsInWindow <= 0) {
-        logger_1.logger.info("Open settings: OC forward counter=0 — skip quota refresh");
+    const key = currentOcAccountKey();
+    const n = getOcForwardCount(key);
+    if (!key || n <= 0) {
+        logger_1.logger.info(
+            `Open settings: OC forward counter=0 for current account (${key || "none"}) — skip`,
+        );
         return Promise.resolve(lastQuotaSnapshot);
     }
-    const n = ocForwardsInWindow;
     logger_1.logger.info(
-        `Open settings: ${n} OpenCode Go forward(s) — silent refresh`,
+        `Open settings: ${n} OpenCode Go forward(s) for ${key} — silent refresh`,
     );
-    return refreshQuota(`open-settings(${n})`, { silent: true });
+    return refreshQuota(`open-settings(${key}:${n})`, { silent: true });
 }
 
 /**
@@ -88,7 +91,7 @@ const no_proxy_1 = require("./no_proxy");
 
 const CONFIG_SECTION = "unified-proxy-copilot";
 const LOCAL_USAGE_KEY = "unified-proxy-copilot.localTokenUsage";
-/** Fixed window: if any OC Go forwards occurred, refresh once at end of window. */
+/** Fixed window: if current OC account had forwards, refresh once at end of window. */
 const QUOTA_WINDOW_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15000;
 
@@ -98,8 +101,125 @@ let extContext = null;
 let statusBar = null;
 /** @type {NodeJS.Timeout|null} */
 let windowTimer = null;
-/** OpenCode Go API forwards counted in the current 5-minute window. */
-let ocForwardsInWindow = 0;
+/**
+ * Per-account OpenCode Go API forwards in the current window.
+ * Key: `${providerId}::${accountId}`
+ * @type {Map<string, number>}
+ */
+const ocForwardsByAccount = new Map();
+
+/** @param {{ proxyKey?: string, accountId?: string }|null|undefined} ep */
+function ocAccountKeyFromEndpoint(ep) {
+    const pk = String(ep?.proxyKey || "").trim();
+    if (!pk) {
+        return "";
+    }
+    const aid = String(ep?.accountId || "default").trim() || "default";
+    return `${pk}::${aid}`;
+}
+
+/**
+ * Resolve counter key for a chat model / provider ref.
+ * @param {string} proxyKey
+ * @returns {string}
+ */
+function resolveOcAccountKeyFromProxyKey(proxyKey) {
+    const raw = String(proxyKey || "").trim();
+    if (!raw) {
+        return "";
+    }
+    try {
+        const account_manager_1 = require("./account_manager");
+        const path = (0, proxy_config_loader_1.getProxyConfigPath)();
+        if (!fs.existsSync(path)) {
+            return "";
+        }
+        const cfg = JSON.parse(fs.readFileSync(path, "utf-8"));
+        let modelRef = raw;
+        try {
+            const auto_assign_1 = require("./auto_assign");
+            if (auto_assign_1.isAutoAssignModelId(raw)) {
+                const target = auto_assign_1.getCurrentAutoAssignTargetId(cfg);
+                if (target) {
+                    modelRef = target;
+                }
+            }
+        }
+        catch {
+            /* optional */
+        }
+        const lookup = proxy_config_loader_1.getAccountLookupKey
+            ? proxy_config_loader_1.getAccountLookupKey(modelRef, cfg)
+            : modelRef;
+        const config_v2_1 = require("./config_v2");
+        let proxy = null;
+        if (config_v2_1.isV2Config?.(cfg)) {
+            const model = config_v2_1.findModel(cfg, modelRef);
+            const provider = model
+                ? config_v2_1.findProvider(cfg, model.provider_id)
+                : config_v2_1.findProvider(cfg, lookup);
+            if (provider) {
+                proxy = {
+                    name: provider.name || provider.id,
+                    base_url: provider.base_url,
+                    api_key: provider.api_key,
+                    accounts: provider.accounts,
+                };
+            }
+        }
+        if (!proxy) {
+            const proxies = cfg.proxies || {};
+            proxy = proxies[lookup] || proxies[raw] || null;
+        }
+        if (!proxy?.base_url || !(0, opencode_headers_1.isOpenCodeGoEndpoint)(proxy.base_url)) {
+            return "";
+        }
+        const resolved = account_manager_1.resolveApiKeyForProxy(lookup, proxy);
+        if (!resolved.apiKey) {
+            return "";
+        }
+        return ocAccountKeyFromEndpoint({
+            proxyKey: lookup,
+            accountId: resolved.account?.id || "default",
+        });
+    }
+    catch {
+        return "";
+    }
+}
+
+/** @param {string} accountKey */
+function getOcForwardCount(accountKey) {
+    if (!accountKey) {
+        return 0;
+    }
+    return ocForwardsByAccount.get(accountKey) || 0;
+}
+
+/** @param {string} accountKey */
+function bumpOcForward(accountKey) {
+    if (!accountKey) {
+        return;
+    }
+    ocForwardsByAccount.set(accountKey, getOcForwardCount(accountKey) + 1);
+}
+
+/** @param {string} accountKey */
+function clearOcForward(accountKey) {
+    if (accountKey) {
+        ocForwardsByAccount.delete(accountKey);
+    }
+}
+
+function clearAllOcForwards() {
+    ocForwardsByAccount.clear();
+}
+
+/** Account key for the endpoint currently shown on the status bar. */
+function currentOcAccountKey() {
+    const eps = collectOpenCodeEndpoints();
+    return eps.length ? ocAccountKeyFromEndpoint(eps[0]) : "";
+}
 /** @type {{ at: number, endpoints: Array<{ label: string, baseUrl: string, usage: any, error?: string }> }|null} */
 let lastQuotaSnapshot = null;
 /**
@@ -993,14 +1113,17 @@ async function refreshQuota(reason, opts = {}) {
         Boolean(primary?.error && !primary?.usage),
     );
     updateStatusBarVisibility(true, Boolean(primary?.error));
-    ocForwardsInWindow = 0;
+    // Clear only accounts we just refreshed (per-account counters)
+    for (const ep of results) {
+        clearOcForward(ocAccountKeyFromEndpoint(ep));
+    }
     logger_1.logger.info(
         `Usage refresh (${reason}${silent ? ",silent" : ""}): ${results.length} endpoint(s), primary=${formatStatusText(primary?.usage, primary?.openCodeAccountLabel)} oc=${primary?.openCodeAccountId || "?"}`,
     );
     return lastQuotaSnapshot;
 }
 
-/** Every 5 minutes: refresh once only if OC Go forwards happened in the window. */
+/** Every 5 minutes: refresh once only if *current* OC account had forwards. */
 function scheduleQuotaWindow() {
     if (windowTimer) {
         clearInterval(windowTimer);
@@ -1010,17 +1133,18 @@ function scheduleQuotaWindow() {
         return;
     }
     windowTimer = setInterval(() => {
-        if (ocForwardsInWindow <= 0) {
+        const key = currentOcAccountKey();
+        const n = getOcForwardCount(key);
+        if (!key || n <= 0) {
             logger_1.logger.info(
-                "Usage window tick: no OpenCode Go forwards — skip refresh",
+                `Usage window tick: no forwards for current account (${key || "none"}) — skip`,
             );
             return;
         }
-        const n = ocForwardsInWindow;
         logger_1.logger.info(
-            `Usage window tick: ${n} OpenCode Go forward(s) — silent refresh`,
+            `Usage window tick: ${n} OpenCode Go forward(s) for ${key} — silent refresh`,
         );
-        void refreshQuota(`window-5m(${n})`, { silent: true });
+        void refreshQuota(`window-5m(${key}:${n})`, { silent: true });
     }, QUOTA_WINDOW_MS);
 }
 
@@ -1058,9 +1182,15 @@ function notifyChatUsage(proxyKey, baseUrl) {
         updateStatusBarVisibility(false, false);
         return;
     }
-    // Count only when active chat is OpenCode Go (setActiveChatModel just updated this)
+    // Count only when active chat is OpenCode Go — per account
     if (lastActiveChat?.isOpenCode) {
-        ocForwardsInWindow += 1;
+        const key =
+            resolveOcAccountKeyFromProxyKey(proxyKey) ||
+            currentOcAccountKey();
+        bumpOcForward(key);
+        logger_1.logger.info(
+            `OC forward count ${getOcForwardCount(key)} for ${key || "?"}`,
+        );
     }
 }
 
@@ -1194,18 +1324,18 @@ function startUsageMonitor(context) {
         dispose: () => clearHideAfterIdleTimer(),
     });
 
-    // Reload/activate: one silent fetch, counter cleared inside refreshQuota.
-    ocForwardsInWindow = 0;
+    // Reload/activate: one silent fetch; clear all per-account counters.
+    clearAllOcForwards();
     void refreshQuota("activate", { silent: true }).then(() => {
         logger_1.logger.info(
-            `Usage monitor ready; statusBar=${statusBar ? "ok" : "null"} mode=${getShowMode()} window=5m`,
+            `Usage monitor ready; statusBar=${statusBar ? "ok" : "null"} mode=${getShowMode()} window=5m per-account counters`,
         );
     });
 
     return {
         refresh: () => refreshQuota("external", { silent: true }),
         onConfigReloaded: () => {
-            ocForwardsInWindow = 0;
+            clearAllOcForwards();
             scheduleQuotaWindow();
             void refreshQuota("reload-config", { silent: true });
         },

@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.27] — 2026-10-31
+
+### Changed
+
+* **Quota counters per account** — OC forward count is keyed by `providerId::accountId`;
+  5m window / open-settings only refresh when the *current* account's counter &gt; 0,
+  and only that account's counter is cleared after refresh.
+
 ## [2.0.26] — 2026-10-31
 
 ### Fixed
