@@ -52,6 +52,60 @@ function clampMaxTokensToContext(maxTokens, contextWindow, promptChars) {
     }
     return Math.min(n, room);
 }
+
+/** Avoid spamming toast on every Agent tool turn. */
+let lastContextCompactHintAt = 0;
+const CONTEXT_COMPACT_HINT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * When prompt fills most of the window (or max_tokens is crushed), nudge user to /compact.
+ * Copilot owns history compaction — we only surface a clickable hint.
+ */
+function maybeHintContextCompact(opts) {
+    const ctx = Number(opts.contextWindow) || 0;
+    const estPrompt = Number(opts.estPromptTokens) || 0;
+    const maxTok = Number(opts.maxTokens);
+    if (ctx <= 0 || estPrompt <= 0) {
+        return;
+    }
+    const fill = estPrompt / ctx;
+    const crushed = Number.isFinite(maxTok) && maxTok > 0 && maxTok <= Math.max(1024, ctx * 0.05);
+    if (fill < 0.8 && !crushed) {
+        return;
+    }
+    const now = Date.now();
+    if (now - lastContextCompactHintAt < CONTEXT_COMPACT_HINT_COOLDOWN_MS) {
+        return;
+    }
+    lastContextCompactHintAt = now;
+    const pct = Math.min(99, Math.round(fill * 100));
+    const vscode = require("vscode");
+    const logger = require("../logger").logger;
+    const msg =
+        `上下文已约占用 ${pct}%（估 ${estPrompt.toLocaleString()} / ${ctx.toLocaleString()} tokens` +
+        (Number.isFinite(maxTok) ? `，本轮 max_tokens=${maxTok}` : "") +
+        `）。建议在 Copilot Chat 输入 /compact 压缩历史，减轻超时与截断。`;
+    logger.warn(msg);
+    void vscode.window
+        .showWarningMessage(msg, "尝试 Compact", "知道了")
+        .then(async (choice) => {
+            if (choice !== "尝试 Compact") {
+                return;
+            }
+            try {
+                await vscode.commands.executeCommand("github.copilot.chat.compact");
+                void vscode.window.showInformationMessage(
+                    "已触发 Compact。若无反应，请在 Chat 输入框手动输入 /compact 后回车。",
+                );
+            }
+            catch (e) {
+                logger.warn(`compact command failed: ${e?.message || e}`);
+                void vscode.window.showInformationMessage(
+                    "无法自动调用 Compact。请在 Copilot Chat 输入 /compact 后回车。",
+                );
+            }
+        });
+}
 function resolveTemperature(proxyConfig) {
     return proxyConfig.temperature ?? proxy_config_parse_1.DEFAULT_TEMPERATURE;
 }
@@ -172,6 +226,10 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
         contextWindow,
         totalRequestChars + toolsChars,
     );
+    const estPromptTokens = Math.max(
+        1,
+        Math.ceil((totalRequestChars + toolsChars) / 1.8),
+    );
     if (
         beforeClamp !== maxTokens &&
         maxTokens !== undefined
@@ -179,12 +237,22 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
         try {
             require("../logger").logger.info(
                 `Clamped max_tokens ${beforeClamp ?? "(omit)"} → ${maxTokens} ` +
-                    `(ctx=${contextWindow} promptChars≈${totalRequestChars}+tools=${toolsChars})`,
+                    `(ctx=${contextWindow} promptChars≈${totalRequestChars}+tools=${toolsChars} estPrompt≈${estPromptTokens})`,
             );
         }
         catch {
             /* optional */
         }
+    }
+    try {
+        maybeHintContextCompact({
+            contextWindow,
+            estPromptTokens,
+            maxTokens,
+        });
+    }
+    catch {
+        /* optional UI */
     }
     const request = {
         model: actualModelId || modelInfo.id,

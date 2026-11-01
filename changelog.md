@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.39] — 2026-11-01
+
+### Added
+
+* **Context compact hint** — when estimated prompt ≥ ~80% of window (or max_tokens crushed),
+  show a warning with **尝试 Compact** (runs `github.copilot.chat.compact` if available)
+  or remind to type `/compact` in Chat. Cooldown 5 minutes.
+
 ## [2.0.38] — 2026-11-01
 
 ### Fixed
