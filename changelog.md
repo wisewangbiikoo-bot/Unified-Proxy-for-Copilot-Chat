@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.31] — 2026-11-01
+
+### Fixed
+
+* **Cancelled stream ≠ empty success** — SSE bridge cancel now rejects with `CancellationError`
+  instead of `resolve()` (which made Copilot show “Sorry, no response was returned”).
+* **Stream diagnostics** — log cancel / reject / zero-part finishes for easier Agent retry diagnosis.
+
 ## [2.0.30] — 2026-10-31
 
 ### Fixed

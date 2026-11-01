@@ -17,17 +17,21 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
         replayMarkerReported: false,
     };
     const cancelListener = (0, diagnostics_1.observeCancellationToken)(token, prepared.cacheDiagnostics);
+    let emittedParts = 0;
     return prepared.client
         .streamChatCompletion(prepared.request, {
         onContent: (content) => {
+            emittedParts += 1;
             reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
             progress.report(new vscode_1.default.LanguageModelTextPart(content));
         },
         onThinking: (text) => {
+            emittedParts += 1;
             reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
             handleThinking(text, state, progress);
         },
         onToolCall: (toolCall) => {
+            emittedParts += 1;
             reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
             handleToolCall(toolCall, state, progress);
         },
@@ -58,12 +62,25 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
         },
     }, token)
         .then(undefined, (error) => {
-        reportSkippedReplayMarkerIfNeeded(prepared, state, token.isCancellationRequested ? 'cancelled' : 'stream-error', error);
+        const cancelled = token.isCancellationRequested ||
+            error?.name === 'Canceled' ||
+            error?.name === 'CancellationError';
+        logger_1.logger.warn(
+            `Stream failed for ${prepared.request?.model || '?'}` +
+                ` cancelled=${cancelled} parts=${emittedParts}: ${error?.message || error}`,
+        );
+        reportSkippedReplayMarkerIfNeeded(prepared, state, cancelled ? 'cancelled' : 'stream-error', error);
         throw error;
     })
         .then(() => {
         if (token.isCancellationRequested) {
             reportSkippedReplayMarkerIfNeeded(prepared, state, 'cancelled');
+            return;
+        }
+        if (emittedParts === 0) {
+            logger_1.logger.warn(
+                `Stream finished with no content/tool parts for ${prepared.request?.model || '?'} — Copilot may show "no response"`,
+            );
         }
     })
         .finally(() => {

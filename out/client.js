@@ -3,10 +3,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeepSeekClient = void 0;
 const path = require("path");
 const { spawn } = require("child_process");
+const vscode = require("vscode");
 const json_1 = require("./json");
 const logger_1 = require("./logger");
 const no_proxy_1 = require("./no_proxy");
 const sanitize_1 = require("./provider/tools/sanitize");
+function cancellationError() {
+    try {
+        return new vscode.CancellationError();
+    }
+    catch {
+        const e = new Error("Cancelled");
+        e.name = "Canceled";
+        return e;
+    }
+}
 const SSE_BRIDGE_SCRIPT = path.join(__dirname, "sse_bridge.js");
 const GEMMA_THINK_START_RE = /<\|channel>thought/i;
 const GEMMA_ORPHAN_RE = /<\|channel\|>|<\|channel>/gi;
@@ -253,10 +264,14 @@ class DeepSeekClient {
                 stdio: ["pipe", "pipe", "pipe"],
                 windowsHide: true,
             });
-            const cancelSub = cancellationToken?.onCancellationRequested(() => child.kill("SIGTERM"));
+            const cancelSub = cancellationToken?.onCancellationRequested(() => {
+                logger_1.logger.info(`SSE bridge cancelled for ${url.slice(0, 80)}`);
+                child.kill("SIGTERM");
+            });
             if (cancellationToken?.isCancellationRequested) {
                 child.kill("SIGTERM");
-                resolve();
+                // Must reject — resolve() with empty body looks like "no response" to Copilot
+                reject(cancellationError());
                 return;
             }
             const endStdin = () => {
@@ -291,6 +306,13 @@ class DeepSeekClient {
             child.on("close", (code) => {
                 cancelSub?.dispose();
                 if (finished) {
+                    return;
+                }
+                if (cancellationToken?.isCancellationRequested) {
+                    logger_1.logger.info(
+                        `SSE bridge closed after cancel (code=${code}, stdout=${stdoutBytes}) for ${url.slice(0, 80)}`,
+                    );
+                    reject(cancellationError());
                     return;
                 }
                 if (code !== 0) {
