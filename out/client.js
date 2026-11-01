@@ -96,6 +96,8 @@ class DeepSeekClient {
         let thinkingChars = 0;
         let toolCallChunks = 0;
         let upstreamError = "";
+        /** @type {string[]} */
+        const recentDataLines = [];
         const textDecoder = new TextDecoder("utf-8", { fatal: false });
         const emitContent = (content) => {
             const cleaned = stripGemmaChannelOrphans(content);
@@ -127,6 +129,10 @@ class DeepSeekClient {
                     continue;
                 }
                 const jsonStr = trimmed.slice(6);
+                recentDataLines.push(jsonStr.slice(0, 240));
+                if (recentDataLines.length > 6) {
+                    recentDataLines.shift();
+                }
                 try {
                     const chunk = JSON.parse(jsonStr);
                     if (chunk.error) {
@@ -165,22 +171,31 @@ class DeepSeekClient {
                     if (choice.delta?.tool_calls) {
                         toolCallChunks += choice.delta.tool_calls.length;
                         for (const tc of choice.delta.tool_calls) {
-                            let pending = pendingToolCalls.get(tc.index);
-                            if (!pending && tc.id) {
+                            const idx =
+                                typeof tc.index === "number" ? tc.index : pendingToolCalls.size;
+                            let pending = pendingToolCalls.get(idx);
+                            // OpenCode often sends id only on the first chunk; later
+                            // chunks use id:"" — must still accumulate by index.
+                            if (!pending) {
+                                const id =
+                                    typeof tc.id === "string" && tc.id.trim()
+                                        ? tc.id.trim()
+                                        : `tool_${idx}`;
                                 pending = {
-                                    id: tc.id,
+                                    id,
                                     type: "function",
                                     function: { name: "", arguments: "" },
                                 };
-                                pendingToolCalls.set(tc.index, pending);
+                                pendingToolCalls.set(idx, pending);
                             }
-                            if (pending) {
-                                if (tc.function?.name) {
-                                    pending.function.name += tc.function.name;
-                                }
-                                if (tc.function?.arguments) {
-                                    pending.function.arguments += tc.function.arguments;
-                                }
+                            else if (typeof tc.id === "string" && tc.id.trim()) {
+                                pending.id = tc.id.trim();
+                            }
+                            if (tc.function?.name) {
+                                pending.function.name += tc.function.name;
+                            }
+                            if (tc.function?.arguments) {
+                                pending.function.arguments += tc.function.arguments;
                             }
                         }
                     }
@@ -219,7 +234,15 @@ class DeepSeekClient {
             }
             flushContent();
             emitUsage();
+            let emittedTools = 0;
             for (const tc of pendingToolCalls.values()) {
+                if (!tc?.function?.name) {
+                    logger_1.logger.warn(
+                        `Dropping tool_call without name id=${tc?.id || "?"} argsLen=${tc?.function?.arguments?.length || 0}`,
+                    );
+                    continue;
+                }
+                emittedTools += 1;
                 callbacks.onToolCall(tc);
             }
             const pendingTools = pendingToolCalls.size;
@@ -228,8 +251,7 @@ class DeepSeekClient {
             const empty =
                 contentChars === 0 &&
                 thinkingChars === 0 &&
-                toolCallChunks === 0 &&
-                pendingTools === 0;
+                emittedTools === 0;
             logger_1.logger.info(
                 `SSE done model=${request?.model || "?"} finish=${lastFinishReason || "?"} ` +
                     `contentChars=${contentChars} thinkingChars=${thinkingChars} ` +
@@ -241,11 +263,17 @@ class DeepSeekClient {
                 return;
             }
             if (empty) {
+                if (recentDataLines.length) {
+                    logger_1.logger.warn(
+                        `Empty stream recent SSE: ${recentDataLines.join(" || ")}`,
+                    );
+                }
                 reject(
                     new Error(
                         `Upstream returned empty stream for ${request?.model || "?"} ` +
-                            `(finish=${lastFinishReason || "none"}). ` +
-                            `Often happens when Agent context is huge — try a new chat.`,
+                            `(finish=${lastFinishReason || "none"}, ` +
+                            `toolChunks=${toolCallChunks}). ` +
+                            `Large-context Agent turns sometimes emit tool_calls without a usable id — check logs.`,
                     ),
                 );
                 return;

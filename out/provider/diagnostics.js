@@ -298,16 +298,31 @@ function formatError(error) {
 function sanitizeLogValue(value) {
     return value.replace(/\s+/g, ' ').slice(0, 200);
 }
+/** OpenCode Go uses prompt_tokens_details.cached_tokens / opencode.tokens.cache_read */
+function resolveCacheTokens(usage) {
+    const hit =
+        Number(usage?.prompt_cache_hit_tokens) ||
+        Number(usage?.prompt_tokens_details?.cached_tokens) ||
+        Number(usage?.opencode?.tokens?.cache_read) ||
+        0;
+    const missDirect = Number(usage?.prompt_cache_miss_tokens);
+    const prompt = Number(usage?.prompt_tokens) || 0;
+    const miss =
+        Number.isFinite(missDirect) && missDirect > 0
+            ? missDirect
+            : hit > 0 && prompt > hit
+                ? prompt - hit
+                : 0;
+    return { hit, miss };
+}
 function logUsage(usage, charsPerToken, requestId) {
-    const cacheHit = usage.prompt_cache_hit_tokens ?? 0;
-    const cacheMiss = usage.prompt_cache_miss_tokens ?? 0;
+    const { hit: cacheHit, miss: cacheMiss } = resolveCacheTokens(usage);
     logger_1.logger.info(`tokens${requestId ? ` #${requestId}` : ''}: prompt=${usage.prompt_tokens} completion=${usage.completion_tokens}` +
         ` | cache: hit=${cacheHit} miss=${cacheMiss} rate=${getCacheHitRate(usage)}%` +
         ` | chars/tok=${charsPerToken.toFixed(2)}`);
 }
 function getCacheHitRate(usage) {
-    const cacheHit = usage.prompt_cache_hit_tokens ?? 0;
-    const cacheMiss = usage.prompt_cache_miss_tokens ?? 0;
+    const { hit: cacheHit, miss: cacheMiss } = resolveCacheTokens(usage);
     const cacheTotal = cacheHit + cacheMiss;
     return cacheTotal > 0 ? ((cacheHit / cacheTotal) * 100).toFixed(0) : 'n/a';
 }

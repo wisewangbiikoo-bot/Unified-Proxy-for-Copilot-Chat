@@ -79,8 +79,8 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
         }
         if (emittedParts === 0) {
             const msg =
-                `Upstream returned no content/tool parts for ${prepared.request?.model || '?'}. ` +
-                `Agent context may be too large — start a new chat.`;
+                `Upstream returned no content/tool parts for ${prepared.request?.model || '?'}` +
+                ` (large-context Agent). See Unified Proxy logs for SSE finish/toolChunks.`;
             logger_1.logger.warn(msg);
             throw new Error(msg);
         }

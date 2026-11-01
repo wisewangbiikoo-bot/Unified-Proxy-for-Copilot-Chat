@@ -66,11 +66,25 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     }
     const actualApiKey = proxyConfig.apiKey;
     const actualModelId = proxyConfig.modelId;
+    // Prefer explicit proxy session; else stable per-conversation segment for
+    // OpenCode Go prompt-cache affinity under large Agent contexts.
+    const sessionOverride =
+        proxyConfig.openCodeSession ||
+        (segment?.segmentId ? `upc-${segment.segmentId}` : "");
     const extraHeaders = (0, opencode_headers_1.buildUpstreamHeaders)({
         baseUrl,
         customHeaders: proxyConfig.customHeaders,
-        sessionOverride: proxyConfig.openCodeSession,
+        sessionOverride,
     });
+    try {
+        require("../logger").logger.info(
+            `OpenCode session=${extraHeaders["x-opencode-session"] || "(none)"} ` +
+                `segment=${segment?.segmentId || "?"} reason=${segment?.reason || "?"}`,
+        );
+    }
+    catch {
+        /* optional */
+    }
     const client = new client_1.DeepSeekClient(baseUrl, actualApiKey, extraHeaders);
     const modelDef = consts_1.MODELS.find((m) => m.id === modelInfo.id);
     const isThinkingModel = modelDef?.capabilities.thinking ?? false;

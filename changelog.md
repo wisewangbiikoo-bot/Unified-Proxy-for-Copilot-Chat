@@ -2,6 +2,15 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.34] — 2026-11-01
+
+### Fixed
+
+* **Large-context Agent empty replies** — accumulate OpenCode `tool_calls` by index even when
+  later chunks send `id:""` (was dropped → Copilot “no response”).
+* **Cache stats** — read OpenCode `cached_tokens` / `opencode.tokens.cache_read` (was always 0).
+* **Session affinity** — use conversation segment id for `x-opencode-session` when unset.
+
 ## [2.0.33] — 2026-11-01
 
 ### Fixed
