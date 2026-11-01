@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.37] — 2026-11-01
+
+### Fixed
+
+* **False empty after tool_calls** — do not flush/clear pending tools on `finish_reason`
+  before `finishStream`; that cleared the map and then rejected as empty even when
+  `toolChunks&gt;0` (large-context Agent “Upstream returned empty stream … finish=tool_calls”).
+
 ## [2.0.36] — 2026-11-01
 
 ### Fixed

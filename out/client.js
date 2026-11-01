@@ -95,10 +95,31 @@ class DeepSeekClient {
         let contentChars = 0;
         let thinkingChars = 0;
         let toolCallChunks = 0;
+        let toolsEmittedToHost = 0;
         let upstreamError = "";
         /** @type {string[]} */
         const recentDataLines = [];
         const textDecoder = new TextDecoder("utf-8", { fatal: false });
+        const emitToolCall = (tc) => {
+            if (!tc) {
+                return false;
+            }
+            // Some gateways put name on the tool_call object itself
+            if (!tc.function?.name && typeof tc.name === "string" && tc.name.trim()) {
+                tc.function = tc.function || { name: "", arguments: "" };
+                tc.function.name = tc.name.trim();
+            }
+            if (!tc.function?.name) {
+                logger_1.logger.warn(
+                    `Dropping tool_call without name id=${tc.id || "?"} ` +
+                        `argsLen=${tc.function?.arguments?.length || 0} raw=${JSON.stringify(tc).slice(0, 280)}`,
+                );
+                return false;
+            }
+            callbacks.onToolCall(tc);
+            toolsEmittedToHost += 1;
+            return true;
+        };
         const emitContent = (content) => {
             const cleaned = stripGemmaChannelOrphans(content);
             if (cleaned) {
@@ -191,21 +212,20 @@ class DeepSeekClient {
                             else if (typeof tc.id === "string" && tc.id.trim()) {
                                 pending.id = tc.id.trim();
                             }
-                            if (tc.function?.name) {
-                                pending.function.name += tc.function.name;
+                            const fnName =
+                                tc.function?.name ||
+                                (typeof tc.name === "string" ? tc.name : "");
+                            if (fnName) {
+                                pending.function.name += fnName;
                             }
                             if (tc.function?.arguments) {
                                 pending.function.arguments += tc.function.arguments;
                             }
                         }
                     }
-                    if (choice.finish_reason === "tool_calls" ||
-                        choice.finish_reason === "stop") {
-                        for (const tc of pendingToolCalls.values()) {
-                            callbacks.onToolCall(tc);
-                        }
-                        pendingToolCalls.clear();
-                    }
+                    // Do NOT flush tools here — finishStream must emit once.
+                    // Early clear made finishStream think the stream was empty
+                    // after finish_reason=tool_calls (large-context Agent bug).
                 }
                 catch (e) {
                     logger_1.logger.error("Failed to parse SSE chunk:", jsonStr.slice(0, 200), e);
@@ -234,28 +254,19 @@ class DeepSeekClient {
             }
             flushContent();
             emitUsage();
-            let emittedTools = 0;
             for (const tc of pendingToolCalls.values()) {
-                if (!tc?.function?.name) {
-                    logger_1.logger.warn(
-                        `Dropping tool_call without name id=${tc?.id || "?"} argsLen=${tc?.function?.arguments?.length || 0}`,
-                    );
-                    continue;
-                }
-                emittedTools += 1;
-                callbacks.onToolCall(tc);
+                emitToolCall(tc);
             }
-            const pendingTools = pendingToolCalls.size;
             pendingToolCalls.clear();
             callbacks.onDone();
             const empty =
                 contentChars === 0 &&
                 thinkingChars === 0 &&
-                emittedTools === 0;
+                toolsEmittedToHost === 0;
             logger_1.logger.info(
                 `SSE done model=${request?.model || "?"} finish=${lastFinishReason || "?"} ` +
                     `contentChars=${contentChars} thinkingChars=${thinkingChars} ` +
-                    `toolChunks=${toolCallChunks} empty=${empty}` +
+                    `toolChunks=${toolCallChunks} toolsEmitted=${toolsEmittedToHost} empty=${empty}` +
                     (upstreamError ? ` upstreamError=${upstreamError}` : ""),
             );
             if (upstreamError) {
@@ -272,8 +283,7 @@ class DeepSeekClient {
                     new Error(
                         `Upstream returned empty stream for ${request?.model || "?"} ` +
                             `(finish=${lastFinishReason || "none"}, ` +
-                            `toolChunks=${toolCallChunks}). ` +
-                            `Large-context Agent turns sometimes emit tool_calls without a usable id — check logs.`,
+                            `toolChunks=${toolCallChunks}, toolsEmitted=0).`,
                     ),
                 );
                 return;
