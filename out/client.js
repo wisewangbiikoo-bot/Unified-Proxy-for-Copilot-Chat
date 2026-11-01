@@ -120,13 +120,7 @@ class DeepSeekClient {
                     continue;
                 }
                 if (trimmed === "data: [DONE]") {
-                    flushContent();
-                    emitUsage();
-                    for (const tc of pendingToolCalls.values()) {
-                        callbacks.onToolCall(tc);
-                    }
-                    pendingToolCalls.clear();
-                    callbacks.onDone();
+                    // Finalization (usage / tools / empty check) happens in finishStream
                     return true;
                 }
                 if (!trimmed.startsWith("data: ")) {
@@ -342,9 +336,10 @@ class DeepSeekClient {
             child.stdout.on("data", (chunk) => {
                 stdoutBytes += chunk.length;
                 if (appendChunk(chunk)) {
+                    // [DONE] seen — still run empty/error checks via finishStream
                     finished = true;
                     child.kill("SIGTERM");
-                    resolve();
+                    finishStream(resolve, reject);
                 }
             });
             child.on("error", (err) => {
