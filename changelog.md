@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.36] — 2026-11-01
+
+### Fixed
+
+* **Large context 400** — clamp `max_tokens` so prompt + max_tokens ≤ context window
+  (was sending catalog output 384000 with ~664k prompt → OpenCode 400 empty stream).
+
 ## [2.0.35] — 2026-11-01
 
 ### Fixed

@@ -29,6 +29,29 @@ function emptyVisionResolution(messages) {
 function resolveMaxOutputTokens(proxyConfig) {
     return proxyConfig.maxOutputTokens;
 }
+/**
+ * Keep prompt + max_tokens within context window.
+ * OpenCode rejects: prompt + max_tokens > context (e.g. 664577 + 384000 > 1048576).
+ * @returns {number|undefined}
+ */
+function clampMaxTokensToContext(maxTokens, contextWindow, promptChars) {
+    const ctx = Number(contextWindow);
+    if (!Number.isFinite(ctx) || ctx <= 0) {
+        return maxTokens;
+    }
+    // Upper-bound prompt tokens (safer clamp). Logs often show ~2.1–2.2 chars/tok.
+    const estPrompt = Math.max(1, Math.ceil(Number(promptChars || 0) / 1.8));
+    const room = Math.max(256, ctx - estPrompt - 256);
+    if (maxTokens === undefined || maxTokens === null) {
+        // Catalog max can be huge; still send a safe room so upstream won't 400.
+        return room < ctx ? room : maxTokens;
+    }
+    const n = Number(maxTokens);
+    if (!Number.isFinite(n) || n <= 0) {
+        return room;
+    }
+    return Math.min(n, room);
+}
 function resolveTemperature(proxyConfig) {
     return proxyConfig.temperature ?? proxy_config_parse_1.DEFAULT_TEMPERATURE;
 }
@@ -93,7 +116,11 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     const modelDef = consts_1.MODELS.find((m) => m.id === modelInfo.id);
     const isThinkingModel = modelDef?.capabilities.thinking ?? false;
     const thinkingEffort = (0, models_1.getConfiguredThinkingEffort)(options, proxyConfig?.thinkingMode);
-    const maxTokens = resolveMaxOutputTokens(proxyConfig);
+    let maxTokens = resolveMaxOutputTokens(proxyConfig);
+    const contextWindow =
+        Number(proxyConfig?.contextWindowTokens) ||
+        Number(modelDef?.maxInputTokens) ||
+        0;
     const temperature = resolveTemperature(proxyConfig);
     // supports_images:
     //   0 = drop images (unless global aux.vision is set → describe via aux)
@@ -137,6 +164,28 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     });
     const tools = (0, request_1.prepareRequestTools)(modelDef?.capabilities.toolCalling, options);
     const totalRequestChars = (0, convert_1.countMessageChars)(deepseekMessages);
+    // Include a rough tools overhead so clamp stays under window with tool schemas.
+    const toolsChars = tools ? JSON.stringify(tools).length : 0;
+    const beforeClamp = maxTokens;
+    maxTokens = clampMaxTokensToContext(
+        maxTokens,
+        contextWindow,
+        totalRequestChars + toolsChars,
+    );
+    if (
+        beforeClamp !== maxTokens &&
+        maxTokens !== undefined
+    ) {
+        try {
+            require("../logger").logger.info(
+                `Clamped max_tokens ${beforeClamp ?? "(omit)"} → ${maxTokens} ` +
+                    `(ctx=${contextWindow} promptChars≈${totalRequestChars}+tools=${toolsChars})`,
+            );
+        }
+        catch {
+            /* optional */
+        }
+    }
     const request = {
         model: actualModelId || modelInfo.id,
         messages: deepseekMessages,
