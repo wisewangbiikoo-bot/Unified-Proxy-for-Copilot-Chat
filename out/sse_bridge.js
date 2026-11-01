@@ -12,8 +12,9 @@
 const http = require("http");
 const https = require("https");
 
-const CONNECT_TIMEOUT_MS = 60000;
-const REQUEST_TIMEOUT_MS = 300000;
+// Large Agent uploads to opencode.ai can sit in TCP slow-start; 60s was tight under load.
+const CONNECT_TIMEOUT_MS = 120000;
+const REQUEST_TIMEOUT_MS = 600000;
 const PROXY_ENV_KEYS = [
     "HTTP_PROXY",
     "HTTPS_PROXY",

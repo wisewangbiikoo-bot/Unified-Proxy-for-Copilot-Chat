@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.38] — 2026-11-01
+
+### Fixed
+
+* **Transient OpenCode network** — retry up to 2× on `connect timeout` / `ECONNRESET` / 502–504;
+  raise SSE connect/request timeouts (120s / 600s) for large-context Agent uploads.
+
 ## [2.0.37] — 2026-11-01
 
 ### Fixed

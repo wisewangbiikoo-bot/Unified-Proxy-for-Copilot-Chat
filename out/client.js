@@ -291,15 +291,32 @@ class DeepSeekClient {
             resolve();
         };
         const runBridge = (requestBody) => this.streamViaChildBridge(url, requestBody, appendChunk, finishStream, cancellationToken);
+        let networkRetries = 0;
         let retried = false;
+        const isTransientNetworkError = (msg) => {
+            const s = String(msg || "");
+            return (
+                s.includes("Upstream request failed") ||
+                s.includes("ECONNRESET") ||
+                s.includes("ECONNREFUSED") ||
+                s.includes("ETIMEDOUT") ||
+                s.includes("connect timeout") ||
+                s.includes("socket hang up") ||
+                s.includes("network socket disconnected") ||
+                /\b50[0234]\b/.test(s)
+            );
+        };
         return runBridge(body)
             .catch(async (err) => {
             const msg = err?.message || String(err);
-            // Retry once on transient upstream provider errors
-            if (!retried && (msg.includes("Upstream request failed") || msg.includes("500") || msg.includes("502") || msg.includes("503"))) {
-                retried = true;
-                logger_1.logger.warn("Upstream provider error; retrying once");
-                await new Promise((r) => setTimeout(r, 1000));
+            // Large-context streams often hit intermittent opencode.ai resets/timeouts
+            if (networkRetries < 2 && isTransientNetworkError(msg)) {
+                networkRetries += 1;
+                const delayMs = 1500 * networkRetries;
+                logger_1.logger.warn(
+                    `Transient upstream network error; retry ${networkRetries}/2 in ${delayMs}ms: ${msg.slice(0, 160)}`,
+                );
+                await new Promise((r) => setTimeout(r, delayMs));
                 return runBridge(body);
             }
             if (!msg.includes("no stdout data") && !msg.includes("SSE bridge returned")) {
