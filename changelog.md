@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.33] — 2026-11-01
+
+### Fixed
+
+* **Empty `[DONE]` path** — `data: [DONE]` now goes through the same empty-stream rejection
+  (previously `resolve()` bypassed the check).
+
 ## [2.0.32] — 2026-11-01
 
 ### Fixed
