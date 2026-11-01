@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.35] — 2026-11-01
+
+### Fixed
+
+* **Session affinity** — only bind `x-opencode-session` to segment when replay marker exists;
+  never use per-request random UUID (that busted large-context cache).
+
 ## [2.0.34] — 2026-11-01
 
 ### Fixed

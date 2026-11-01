@@ -66,11 +66,15 @@ async function prepareChatRequest({ authManager, globalStorageUri, modelInfo, se
     }
     const actualApiKey = proxyConfig.apiKey;
     const actualModelId = proxyConfig.modelId;
-    // Prefer explicit proxy session; else stable per-conversation segment for
-    // OpenCode Go prompt-cache affinity under large Agent contexts.
+    // Session affinity for OpenCode Go cache:
+    // - explicit proxy/setting session wins
+    // - else reuse replay-marker segmentId (stable across turns)
+    // - never use markerMissing's random UUID (would bust cache every request)
     const sessionOverride =
         proxyConfig.openCodeSession ||
-        (segment?.segmentId ? `upc-${segment.segmentId}` : "");
+        (segment?.reason === "markerFound" && segment.segmentId
+            ? `upc-${segment.segmentId}`
+            : "");
     const extraHeaders = (0, opencode_headers_1.buildUpstreamHeaders)({
         baseUrl,
         customHeaders: proxyConfig.customHeaders,
