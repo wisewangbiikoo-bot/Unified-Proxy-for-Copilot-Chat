@@ -711,11 +711,13 @@ function paramsFromMeta(meta) {
     if (!meta) {
         return params;
     }
+    const scale = require("./upstream_model_limits").scaleUpstreamLimitDefault;
     if (meta.context) {
-        params.context_window_size = meta.context;
+        // Default = 70% of upstream limit (safety headroom)
+        params.context_window_size = scale(meta.context);
     }
     if (meta.output) {
-        params.max_output_tokens = meta.output;
+        params.max_output_tokens = scale(meta.output);
     }
     if (meta.supportsNativeVision !== undefined) {
         params.supports_images = meta.supportsNativeVision ? 2 : 0;

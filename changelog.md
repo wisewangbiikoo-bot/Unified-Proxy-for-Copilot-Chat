@@ -2,6 +2,14 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.40] — 2026-11-01
+
+### Changed
+
+* **Upstream limit defaults** — when filling `context_window_size` / `max_output_tokens` from
+  GET /models (auto / enable model), use **70%** of catalog max for safety headroom.
+  Tip UI still shows raw upstream limits. Re-enable model or set params to auto to refresh.
+
 ## [2.0.39] — 2026-11-01
 
 ### Added

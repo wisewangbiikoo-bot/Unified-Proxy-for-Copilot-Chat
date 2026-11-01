@@ -10,6 +10,27 @@ exports.fetchUpstreamModelLimits = fetchUpstreamModelLimits;
 exports.fetchUpstreamModelCatalog = fetchUpstreamModelCatalog;
 exports.clearUpstreamLimitsCache = clearUpstreamLimitsCache;
 exports.buildListHeaders = buildListHeaders;
+exports.UPSTREAM_LIMIT_DEFAULT_RATIO = void 0;
+exports.scaleUpstreamLimitDefault = scaleUpstreamLimitDefault;
+
+/** When filling default config from GET /models, keep headroom vs catalog max. */
+exports.UPSTREAM_LIMIT_DEFAULT_RATIO = 0.7;
+
+/**
+ * Catalog limit → default config value (70% safety margin).
+ * @param {number|null|undefined} n
+ * @param {number} [ratio]
+ * @returns {number}
+ */
+function scaleUpstreamLimitDefault(n, ratio = exports.UPSTREAM_LIMIT_DEFAULT_RATIO) {
+    const v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) {
+        return 0;
+    }
+    const r = Number(ratio);
+    const use = Number.isFinite(r) && r > 0 && r <= 1 ? r : 0.7;
+    return Math.max(1, Math.floor(v * use));
+}
 
 const no_proxy_1 = require("./no_proxy");
 const opencode_headers_1 = require("./opencode_headers");

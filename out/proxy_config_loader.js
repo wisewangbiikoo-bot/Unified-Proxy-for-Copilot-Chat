@@ -493,23 +493,26 @@ async function enrichModelsWithUpstreamLimits(models) {
             let localChange = false;
             const bits = [];
 
+            const scale = upstream_model_limits_1.scaleUpstreamLimitDefault;
             if (!pc.contextWindowFromConfig && meta.context) {
-                if (m.maxInputTokens !== meta.context || pc.contextWindowTokens !== meta.context) {
-                    m.maxInputTokens = meta.context;
-                    pc.contextWindowTokens = meta.context;
-                    next.context = meta.context;
+                const ctx = scale(meta.context);
+                if (m.maxInputTokens !== ctx || pc.contextWindowTokens !== ctx) {
+                    m.maxInputTokens = ctx;
+                    pc.contextWindowTokens = ctx;
+                    next.context = ctx;
                     localChange = true;
                 }
-                bits.push(`context=${meta.context}`);
+                bits.push(`context=${ctx}(70% of ${meta.context})`);
             }
             if (!pc.maxOutputFromConfig && meta.output) {
-                if (m.maxOutputTokens !== meta.output || pc.maxOutputTokens !== meta.output) {
-                    m.maxOutputTokens = meta.output;
-                    pc.maxOutputTokens = meta.output;
-                    next.output = meta.output;
+                const out = scale(meta.output);
+                if (m.maxOutputTokens !== out || pc.maxOutputTokens !== out) {
+                    m.maxOutputTokens = out;
+                    pc.maxOutputTokens = out;
+                    next.output = out;
                     localChange = true;
                 }
-                bits.push(`output=${meta.output}`);
+                bits.push(`output=${out}(70% of ${meta.output})`);
             }
             if (!pc.supportsImagesFromConfig && meta.supportsNativeVision !== undefined) {
                 const mode = meta.supportsNativeVision ? 2 : 0;
