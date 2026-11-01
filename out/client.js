@@ -91,10 +91,16 @@ class DeepSeekClient {
         let buffer = "";
         let cancelListener;
         let lastUsage = null;
+        let lastFinishReason = "";
+        let contentChars = 0;
+        let thinkingChars = 0;
+        let toolCallChunks = 0;
+        let upstreamError = "";
         const textDecoder = new TextDecoder("utf-8", { fatal: false });
         const emitContent = (content) => {
             const cleaned = stripGemmaChannelOrphans(content);
             if (cleaned) {
+                contentChars += cleaned.length;
                 callbacks.onContent(cleaned);
             }
         };
@@ -129,6 +135,14 @@ class DeepSeekClient {
                 const jsonStr = trimmed.slice(6);
                 try {
                     const chunk = JSON.parse(jsonStr);
+                    if (chunk.error) {
+                        const errMsg =
+                            chunk.error?.message ||
+                            chunk.error?.type ||
+                            JSON.stringify(chunk.error).slice(0, 300);
+                        upstreamError = String(errMsg);
+                        logger_1.logger.error(`Upstream SSE error object: ${upstreamError}`);
+                    }
                     const choice = chunk.choices?.[0];
                     // Accumulate usage, emit only once at stream end (#145)
                     if (chunk.usage) {
@@ -137,10 +151,17 @@ class DeepSeekClient {
                     if (!choice) {
                         continue;
                     }
-                    const reasoning = choice.delta?.reasoning_content;
+                    if (choice.finish_reason) {
+                        lastFinishReason = String(choice.finish_reason);
+                    }
+                    const reasoning =
+                        choice.delta?.reasoning_content ||
+                        choice.delta?.reasoning ||
+                        "";
                     if (reasoning) {
                         const cleanedReasoning = stripGemmaChannelOrphans(reasoning);
                         if (cleanedReasoning.trim()) {
+                            thinkingChars += cleanedReasoning.length;
                             callbacks.onThinking(cleanedReasoning);
                         }
                     }
@@ -148,6 +169,7 @@ class DeepSeekClient {
                         emitContent(choice.delta.content);
                     }
                     if (choice.delta?.tool_calls) {
+                        toolCallChunks += choice.delta.tool_calls.length;
                         for (const tc of choice.delta.tool_calls) {
                             let pending = pendingToolCalls.get(tc.index);
                             if (!pending && tc.id) {
@@ -192,7 +214,7 @@ class DeepSeekClient {
             buffer += typeof chunk === "string" ? chunk : textDecoder.decode(chunk, { stream: true });
             return processLines();
         };
-        const finishStream = (resolve) => {
+        const finishStream = (resolve, reject) => {
             const tail = textDecoder.decode();
             if (tail) {
                 buffer += tail;
@@ -206,8 +228,34 @@ class DeepSeekClient {
             for (const tc of pendingToolCalls.values()) {
                 callbacks.onToolCall(tc);
             }
+            const pendingTools = pendingToolCalls.size;
             pendingToolCalls.clear();
             callbacks.onDone();
+            const empty =
+                contentChars === 0 &&
+                thinkingChars === 0 &&
+                toolCallChunks === 0 &&
+                pendingTools === 0;
+            logger_1.logger.info(
+                `SSE done model=${request?.model || "?"} finish=${lastFinishReason || "?"} ` +
+                    `contentChars=${contentChars} thinkingChars=${thinkingChars} ` +
+                    `toolChunks=${toolCallChunks} empty=${empty}` +
+                    (upstreamError ? ` upstreamError=${upstreamError}` : ""),
+            );
+            if (upstreamError) {
+                reject(new Error(`Upstream error: ${upstreamError}`));
+                return;
+            }
+            if (empty) {
+                reject(
+                    new Error(
+                        `Upstream returned empty stream for ${request?.model || "?"} ` +
+                            `(finish=${lastFinishReason || "none"}). ` +
+                            `Often happens when Agent context is huge — try a new chat.`,
+                    ),
+                );
+                return;
+            }
             resolve();
         };
         const runBridge = (requestBody) => this.streamViaChildBridge(url, requestBody, appendChunk, finishStream, cancellationToken);
@@ -340,7 +388,7 @@ class DeepSeekClient {
                     reject(new Error("SSE bridge returned no stdout data"));
                     return;
                 }
-                finishStream(resolve);
+                finishStream(resolve, reject);
             });
         });
     }

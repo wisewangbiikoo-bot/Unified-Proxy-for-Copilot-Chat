@@ -2,6 +2,13 @@
 
 **Unified Proxy for Copilot Chat** (publisher `biikoo`)
 
+## [2.0.32] — 2026-11-01
+
+### Fixed
+
+* **Empty upstream stream** — treat zero content/thinking/tools as an error (with finish_reason log)
+  instead of silent success that becomes Copilot “no response”. Hint: huge Agent context.
+
 ## [2.0.31] — 2026-11-01
 
 ### Fixed

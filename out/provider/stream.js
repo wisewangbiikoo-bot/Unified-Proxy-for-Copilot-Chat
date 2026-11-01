@@ -78,9 +78,11 @@ function streamChatCompletion({ prepared, progress, token, initialResponseNotice
             return;
         }
         if (emittedParts === 0) {
-            logger_1.logger.warn(
-                `Stream finished with no content/tool parts for ${prepared.request?.model || '?'} — Copilot may show "no response"`,
-            );
+            const msg =
+                `Upstream returned no content/tool parts for ${prepared.request?.model || '?'}. ` +
+                `Agent context may be too large — start a new chat.`;
+            logger_1.logger.warn(msg);
+            throw new Error(msg);
         }
     })
         .finally(() => {
